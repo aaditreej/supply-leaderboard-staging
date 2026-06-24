@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Dostt Leaderboard — Login</title>
+  <link rel="icon" href="/favicon.png" type="image/png" sizes="128x128">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-inner">
+
+      <div class="login-header">
+        <img src="/brand/Dostt_icon_no_bg.png" class="login-logo" alt="dostt">
+        <span class="login-brand">dostt</span>
+      </div>
+
+      <h1 class="login-heading">Login to get started</h1>
+
+      <div class="phone-input-wrap">
+        <button id="country-btn" class="country-btn" type="button">
+          <span id="country-flag" class="flag">🇮🇳</span>
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" class="chevron">
+            <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span id="country-code">+91</span>
+        </button>
+        <input
+          id="mobile-input"
+          type="tel"
+          inputmode="numeric"
+          maxlength="12"
+          placeholder="Enter mobile number"
+          autocomplete="tel-national"
+        >
+      </div>
+
+      <button id="login-btn" class="login-btn" disabled>
+        <span class="btn-label">Login</span>
+        <span class="btn-spinner"></span>
+      </button>
+
+      <div id="login-error" class="login-error" role="alert"></div>
+
+    </div>
+  </div>
+
+  <!-- Country sheet (slide-up) -->
+  <div id="sheet-overlay" class="sheet-overlay hidden"></div>
+  <div id="country-sheet" class="country-sheet hidden">
+    <div class="sheet-handle-row">
+      <div class="sheet-handle"></div>
+    </div>
+    <div class="sheet-search-wrap">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="sheet-search-icon">
+        <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.4"/>
+        <path d="M10 10L13 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      <input id="country-search" type="text" placeholder="Search for Country" autocomplete="off" class="sheet-search-input">
+    </div>
+    <div id="country-list" class="country-list"></div>
+  </div>
+
+  <script>
+    const COUNTRIES = [
+      { flag: '🇮🇳', name: 'India',        code: '+91'  },
+      { flag: '🇸🇦', name: 'Saudi Arabia', code: '+966' },
+      { flag: '🇳🇵', name: 'Nepal',        code: '+977' },
+      { flag: '🇧🇩', name: 'Bangladesh',   code: '+880' },
+      { flag: '🇧🇭', name: 'Bahrain',      code: '+973' },
+      { flag: '🇶🇦', name: 'Qatar',        code: '+974' },
+      { flag: '🇴🇲', name: 'Oman',         code: '+968' },
+      { flag: '🇦🇪', name: 'UAE',          code: '+971' },
+      { flag: '🇰🇼', name: 'Kuwait',       code: '+965' },
+      { flag: '🇱🇰', name: 'Sri Lanka',    code: '+94'  },
+      { flag: '🇲🇾', name: 'Malaysia',     code: '+60'  },
+    ];
+
+    let selectedCountry = COUNTRIES[0];
+
+    const input        = document.getElementById('mobile-input');
+    const btn          = document.getElementById('login-btn');
+    const err          = document.getElementById('login-error');
+    const countryBtn   = document.getElementById('country-btn');
+    const countryFlag  = document.getElementById('country-flag');
+    const countryCode  = document.getElementById('country-code');
+    const overlay      = document.getElementById('sheet-overlay');
+    const sheet        = document.getElementById('country-sheet');
+    const searchInput  = document.getElementById('country-search');
+    const countryList  = document.getElementById('country-list');
+
+    function renderCountryList(query) {
+      const q = (query || '').toLowerCase();
+      const filtered = q
+        ? COUNTRIES.filter(c => c.name.toLowerCase().includes(q) || c.code.includes(q))
+        : COUNTRIES;
+      countryList.innerHTML = filtered.map(c => `
+        <button class="country-option" data-code="${c.code}" data-flag="${c.flag}" data-name="${c.name}" type="button">
+          <span class="country-option-flag">${c.flag}</span>
+          <span class="country-option-name">${c.name} (${c.code})</span>
+        </button>
+      `).join('');
+      countryList.querySelectorAll('.country-option').forEach(optBtn => {
+        optBtn.addEventListener('click', () => {
+          selectedCountry = { flag: optBtn.dataset.flag, name: optBtn.dataset.name, code: optBtn.dataset.code };
+          countryFlag.textContent = selectedCountry.flag;
+          countryCode.textContent = selectedCountry.code;
+          closeSheet();
+        });
+      });
+    }
+
+    function openSheet() {
+      searchInput.value = '';
+      renderCountryList('');
+      sheet.classList.remove('hidden');
+      overlay.classList.remove('hidden');
+      sheet.classList.add('sheet-open');
+      setTimeout(() => searchInput.focus(), 80);
+    }
+
+    function closeSheet() {
+      sheet.classList.remove('sheet-open');
+      overlay.classList.add('hidden');
+      setTimeout(() => sheet.classList.add('hidden'), 260);
+    }
+
+    countryBtn.addEventListener('click', openSheet);
+    overlay.addEventListener('click', closeSheet);
+    searchInput.addEventListener('input', () => renderCountryList(searchInput.value));
+
+    input.addEventListener('input', () => {
+      const clean = input.value.replace(/\D/g, '');
+      input.value = clean;
+      btn.disabled = clean.length < 7;
+      err.classList.remove('visible');
+    });
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !btn.disabled) btn.click();
+    });
+
+    btn.addEventListener('click', async () => {
+      const mobile = input.value.trim();
+      if (mobile.length < 7) return;
+
+      btn.classList.add('loading');
+      btn.disabled = true;
+      err.classList.remove('visible');
+
+      try {
+        const res = await fetch('/api/auth/lookup-mobile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mobile_number: mobile })
+        });
+
+        if (res.ok) {
+          window.location.href = '/leaderboard';
+        } else {
+          const data = await res.json();
+          showError(data.error || 'Login failed. Please try again.');
+        }
+      } catch {
+        showError('Connection error — check your internet and try again.');
+      } finally {
+        btn.classList.remove('loading');
+        btn.disabled = false;
+      }
+    });
+
+    function showError(msg) {
+      err.textContent = msg;
+      err.classList.add('visible');
+    }
+  </script>
+</body>
+</html>

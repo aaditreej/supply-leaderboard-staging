@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Listener Leaderboard – Terms & Conditions | Dostt</title>
+  <link rel="icon" href="/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --ground:      #11161f;
+      --surface:     #1a2230;
+      --surface-hi:  #1e2a3a;
+      --accent:      #7c3aed;
+      --accent-2:    #844aff;
+      --text:        #ffffff;
+      --sub:         #9aa6bc;
+      --muted:       rgba(154,166,188,0.35);
+      --r:           16px;
+    }
+
+    html { font-size: 16px; -webkit-tap-highlight-color: transparent; scroll-behavior: smooth; }
+
+    body {
+      background: var(--ground);
+      color: var(--text);
+      font-family: 'Poppins', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      padding-bottom: 56px;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: var(--surface);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header-logo {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+    }
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .header-sub {
+      font-size: 11px;
+      color: var(--sub);
+      font-weight: 400;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      background: linear-gradient(135deg, #1a1040 0%, #0f1a2e 100%);
+      padding: 32px 20px 28px;
+      text-align: center;
+      border-bottom: 1px solid rgba(124,58,237,0.2);
+    }
+    .hero-badge {
+      display: inline-block;
+      background: rgba(124,58,237,0.18);
+      border: 1px solid rgba(124,58,237,0.4);
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #a78bfa;
+      padding: 4px 12px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+    .hero h1 {
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 8px;
+    }
+    .hero h1 span {
+      background: linear-gradient(90deg, #7c3aed, #844aff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-meta {
+      font-size: 12px;
+      color: var(--sub);
+      margin-top: 10px;
+    }
+
+    /* ── Content ── */
+    .content {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 24px 20px 0;
+    }
+
+    /* ── TOC ── */
+    .toc {
+      background: var(--surface);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: var(--r);
+      padding: 18px 20px;
+      margin-bottom: 28px;
+    }
+    .toc-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--sub);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+    .toc ol {
+      padding-left: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .toc li a {
+      font-size: 13px;
+      color: #a78bfa;
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .toc li a:hover { text-decoration: underline; }
+
+    /* ── Sections ── */
+    .section {
+      margin-bottom: 32px;
+      scroll-margin-top: 72px;
+    }
+    .section-number {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-2, #844aff);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .section h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+    .section p {
+      font-size: 13.5px;
+      color: var(--sub);
+      line-height: 1.75;
+      margin-bottom: 12px;
+    }
+    .section p:last-child { margin-bottom: 0; }
+
+    /* ── Reward table ── */
+    .reward-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 13px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .reward-table th {
+      background: rgba(124,58,237,0.22);
+      color: #c4b5fd;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 10px 14px;
+      text-align: left;
+    }
+    .reward-table td {
+      background: var(--surface);
+      color: var(--sub);
+      padding: 10px 14px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+    .reward-table tr:last-child td { border-bottom: none; }
+    .reward-table .val {
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* ── Callout box ── */
+    .callout {
+      background: rgba(124,58,237,0.1);
+      border-left: 3px solid #7c3aed;
+      border-radius: 0 10px 10px 0;
+      padding: 12px 16px;
+      margin: 14px 0;
+    }
+    .callout p {
+      font-size: 13px;
+      color: #c4b5fd;
+      line-height: 1.65;
+      margin-bottom: 0;
+    }
+
+    /* ── Bullet list ── */
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 10px 0 14px;
+      padding: 0;
+    }
+    .bullet-list li {
+      font-size: 13.5px;
+      color: var(--sub);
+      line-height: 1.65;
+      padding-left: 18px;
+      position: relative;
+    }
+    .bullet-list li::before {
+      content: '–';
+      position: absolute;
+      left: 0;
+      color: #7c3aed;
+      font-weight: 700;
+    }
+
+    /* ── Links ── */
+    a { color: #a78bfa; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Contact card ── */
+    .contact-card {
+      background: var(--surface);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: var(--r);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .contact-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .contact-icon {
+      font-size: 16px;
+      min-width: 20px;
+      margin-top: 1px;
+    }
+    .contact-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--sub);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 2px;
+    }
+    .contact-val {
+      font-size: 13.5px;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .contact-addr {
+      font-size: 12.5px;
+      color: var(--sub);
+      line-height: 1.6;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      padding: 32px 20px 16px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .footer a { color: rgba(167,139,250,0.7); }
+
+    /* ── Divider ── */
+    hr.divider {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      margin: 0 0 32px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <img src="/brand/Dostt_icon_no_bg.png" class="header-logo" alt="Dostt" onerror="this.style.display='none'" />
+    <div>
+      <div class="header-title">Listener Leaderboard</div>
+      <div class="header-sub">Terms &amp; Conditions</div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-badge">Programme Rules</div>
+    <h1>Listener Leaderboard<br /><span>Terms &amp; Conditions</span></h1>
+    <div class="hero-meta">Behtar Technology Private Limited &nbsp;·&nbsp; Effective from launch day</div>
+  </div>
+
+  <div class="content">
+
+    <!-- Table of Contents -->
+    <div class="toc">
+      <div class="toc-title">Contents</div>
+      <ol>
+        <li><a href="#s1">About the Programme</a></li>
+        <li><a href="#s2">Eligibility</a></li>
+        <li><a href="#s3">How Rankings Work</a></li>
+        <li><a href="#s4">Rewards</a></li>
+        <li><a href="#s5">Daily Reset &amp; Streak Cycle</a></li>
+        <li><a href="#s6">Claiming Rewards</a></li>
+        <li><a href="#s7">Prohibited Conduct</a></li>
+        <li><a href="#s8">Modifications to the Programme</a></li>
+        <li><a href="#s9">Privacy</a></li>
+        <li><a href="#s10">Disclaimers &amp; Limitation of Liability</a></li>
+        <li><a href="#s11">Governing Law &amp; Disputes</a></li>
+        <li><a href="#s12">Contact &amp; Grievance Redressal</a></li>
+      </ol>
+    </div>
+
+    <p style="font-size:13px;color:var(--sub);line-height:1.75;margin-bottom:28px;">
+      These Terms apply to the <strong style="color:var(--text)">Listener Leaderboard</strong> programme ("Programme") available within the Dostt App (available on Google Play Store and Apple App Store) operated by <strong style="color:var(--text)">Behtar Technology Private Limited</strong> ("Company"), registered in India with offices at 1501, 19th Main, HSR Layout Sector 1, Bangalore, Karnataka – 560102. <strong style="color:var(--text)">"We", "our"</strong> or <strong style="color:var(--text)">"us"</strong> refers to Behtar Technology Private Limited, and <strong style="color:var(--text)">"you"</strong> or <strong style="color:var(--text)">"your"</strong> refers to any listener/expert participating in the Programme.
+    </p>
+    <p style="font-size:13px;color:var(--sub);line-height:1.75;margin-bottom:28px;">
+      These Terms must be read alongside the <a href="https://www.dostt.in/terms" target="_blank" rel="noopener">Terms of Use</a>, <a href="https://www.dostt.in/privacypolicy" target="_blank" rel="noopener">Privacy Policy</a>, and <a href="https://www.dostt.in/guidelines" target="_blank" rel="noopener">Community Guidelines</a> (collectively, the "Platform Policies"). In the event of any inconsistency, these Terms prevail solely with respect to the Programme. By participating, you confirm you have read, understood, and accepted these Terms. If you do not agree, please do not participate.
+    </p>
+
+    <hr class="divider" />
+
+    <!-- S1 -->
+    <div class="section" id="s1">
+      <div class="section-number">01</div>
+      <h2>About the Programme</h2>
+      <p>The Listener Leaderboard is a daily in-app incentive programme for eligible listeners on the Dostt App. It ranks listeners by their total talk time each day and awards coins to top performers and those who maintain qualifying streaks.</p>
+      <p>The Programme is a promotional engagement initiative and does not constitute a financial product, investment scheme, or deposit-taking activity under applicable law. Rankings and rewards are calculated by our systems and are subject to the rules below.</p>
+    </div>
+
+    <!-- S2 -->
+    <div class="section" id="s2">
+      <div class="section-number">02</div>
+      <h2>Eligibility</h2>
+      <p>Participation is available exclusively to registered <strong style="color:var(--text)">listeners/experts</strong> on the Dostt App. To be eligible, you must:</p>
+      <ul class="bullet-list">
+        <li>Hold a verified Dostt account linked to an active mobile number</li>
+        <li>Be at least 18 years of age</li>
+        <li>Be legally permitted to access the Dostt App under the laws of your jurisdiction</li>
+        <li>Be in good standing — accounts that are suspended, restricted, or under review are not eligible</li>
+      </ul>
+      <p>We reserve the right to verify eligibility at any time and to restrict or revoke participation at our sole discretion. The Company may request additional documentation for compliance verification and may suspend reward eligibility pending such verification.</p>
+    </div>
+
+    <!-- S3 -->
+    <div class="section" id="s3">
+      <div class="section-number">03</div>
+      <h2>How Rankings Work</h2>
+      <p><strong style="color:var(--text)">Qualifying</strong> — A listener must accumulate at least <strong style="color:var(--text)">10 minutes</strong> of total talk time in a calendar day (IST) to be considered "qualified" for that day's leaderboard. Listeners who have not yet reached 10 minutes are shown a progress indicator but do not appear in the ranked pool.</p>
+      <p><strong style="color:var(--text)">Personal Pool</strong> — Each listener sees a personalised pool of 20 competitors drawn from nearby qualifiers. Your display rank (1–20) reflects your position within your own pool, not a global rank. Your pool is refreshed periodically throughout the day as talk times change.</p>
+      <p><strong style="color:var(--text)">Talk Time Data</strong> — Rankings are derived from talk time data sourced from our analytics system. Data may reflect activity from up to 10 minutes prior to the time of viewing. The Company's records shall be final and binding, except in cases of manifest error.</p>
+      <div class="callout">
+        <p>Your displayed rank is always 1–20 within your personal pool. The podium (top 3) shown on your screen represents the top 3 of your pool, not global top 3.</p>
+      </div>
+    </div>
+
+    <!-- S4 -->
+    <div class="section" id="s4">
+      <div class="section-number">04</div>
+      <h2>Rewards</h2>
+      <p>The Programme offers two types of rewards — <strong style="color:var(--text)">Daily Podium Rewards</strong> and <strong style="color:var(--text)">Streak Bonuses</strong>. All rewards are credited as coins to your Dostt wallet.</p>
+
+      <p style="font-size:12px;font-weight:600;color:var(--sub);text-transform:uppercase;letter-spacing:0.5px;margin-top:16px;margin-bottom:8px;">Daily Podium Rewards</p>
+      <table class="reward-table">
+        <thead>
+          <tr>
+            <th>Pool Rank at Day End</th>
+            <th>Reward (Coins)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>🥇 Rank 1</td><td class="val">₹1,500 in coins</td></tr>
+          <tr><td>🥈 Rank 2</td><td class="val">₹1,000 in coins</td></tr>
+          <tr><td>🥉 Rank 3</td><td class="val">₹500 in coins</td></tr>
+        </tbody>
+      </table>
+
+      <p style="font-size:12px;font-weight:600;color:var(--sub);text-transform:uppercase;letter-spacing:0.5px;margin-top:20px;margin-bottom:8px;">Streak Bonus</p>
+      <table class="reward-table">
+        <thead>
+          <tr>
+            <th>Qualifying Streak</th>
+            <th>Bonus</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Every 7 consecutive qualifying days</td><td class="val">₹500 in coins</td></tr>
+        </tbody>
+      </table>
+
+      <p style="margin-top:16px;">Rewards are credited automatically at the end of each qualifying day (00:01 IST) based on final rankings. Reward values are subject to change; any changes will be notified through the Dostt App before they take effect.</p>
+      <p>The Company reserves the right to delay, withhold, or reverse rewards in cases of suspected fraud, abuse, or technical anomalies.</p>
+    </div>
+
+    <!-- S5 -->
+    <div class="section" id="s5">
+      <div class="section-number">05</div>
+      <h2>Daily Reset &amp; Streak Cycle</h2>
+      <p><strong style="color:var(--text)">Daily Reset</strong> — The leaderboard resets at midnight IST each day. Your talk time resets to zero, and rankings are recalculated fresh from the start of each new day. Podium rewards, if earned, are credited at this point based on your final pool rank for the completed day.</p>
+      <p><strong style="color:var(--text)">Streak Cycle</strong> — Your streak counter tracks consecutive days on which you qualified (≥10 minutes). A streak bonus of ₹500 in coins is credited upon completing every 7th consecutive qualifying day. Missing a qualifying day resets your streak to zero. A new streak cycle begins on the following qualifying day.</p>
+      <div class="callout">
+        <p>Streak counts are visible on the Streak tab in the leaderboard. Your streak is not lost during the day — it holds at your previous day's count and updates at midnight once today's qualification status is settled.</p>
+      </div>
+    </div>
+
+    <!-- S6 -->
+    <div class="section" id="s6">
+      <div class="section-number">06</div>
+      <h2>Claiming Rewards</h2>
+      <p>Podium and streak rewards are credited automatically to your Dostt wallet at midnight IST. There is no manual claim step required. You will receive an in-app notification when a reward is credited.</p>
+      <p>Coins credited through this Programme are subject to the standard coin expiry policy applicable to all coins on the Dostt App, as set out in the <a href="https://www.dostt.in/terms" target="_blank" rel="noopener">Dostt App Terms of Use</a>. Expired coins are forfeited without notice or compensation.</p>
+      <p>If your account is suspended or terminated for breach of the Platform Policies or applicable law, all coins including those earned through this Programme will be forfeited without refund or compensation.</p>
+    </div>
+
+    <!-- S7 -->
+    <div class="section" id="s7">
+      <div class="section-number">07</div>
+      <h2>Prohibited Conduct</h2>
+      <p>You must not attempt to manipulate, misuse, or exploit this Programme in any manner. Prohibited conduct includes but is not limited to:</p>
+      <ul class="bullet-list">
+        <li>Generating fake, automated, or artificially inflated call durations</li>
+        <li>Self-calling, circular calling, or coordinated activity intended to inflate talk time</li>
+        <li>Using bots, scripts, or automated tools to interact with the Programme</li>
+        <li>Creating multiple accounts to gain additional Programme benefits</li>
+        <li>Exploiting technical errors or vulnerabilities within the Programme</li>
+        <li>Any other conduct intended to gain rewards in a manner not contemplated by these Terms</li>
+      </ul>
+      <p>The Company reserves the right to reverse rewards, disqualify participation, suspend or terminate accounts, and take legal action where warranted.</p>
+    </div>
+
+    <!-- S8 -->
+    <div class="section" id="s8">
+      <div class="section-number">08</div>
+      <h2>Modifications to the Programme</h2>
+      <p>We may modify, suspend, or permanently terminate the Programme, or any part of it, at any time and at our sole discretion. This includes changes to qualifying thresholds, reward values, pool mechanics, streak rules, and eligibility criteria.</p>
+      <p>Where any change materially affects your rights, we will take reasonable steps to notify you through the Dostt App before the change takes effect. Your continued participation following any modification constitutes your acceptance of the revised Terms.</p>
+    </div>
+
+    <!-- S9 -->
+    <div class="section" id="s9">
+      <div class="section-number">09</div>
+      <h2>Privacy</h2>
+      <p>Your participation is governed by the <a href="https://www.dostt.in/privacypolicy" target="_blank" rel="noopener">Dostt Privacy Policy</a>. Data related to your talk time, rankings, and reward history is used solely to operate and improve the Programme and is handled in accordance with applicable law.</p>
+    </div>
+
+    <!-- S10 -->
+    <div class="section" id="s10">
+      <div class="section-number">10</div>
+      <h2>Disclaimers &amp; Limitation of Liability</h2>
+      <p>The Programme is provided on an "as is, where is" basis. We make no representations or warranties, express or implied, regarding the availability, accuracy, or continuity of the Programme or rankings displayed.</p>
+      <p>To the fullest extent permitted by law, we are not liable for any direct, indirect, incidental, or consequential loss or damage arising from your participation or inability to participate in the Programme, including loss of rewards due to technical failures or data delays. Where liability cannot be excluded by law, our total liability shall not exceed the value of the uncredited rewards in your account at the time of the relevant event.</p>
+    </div>
+
+    <!-- S11 -->
+    <div class="section" id="s11">
+      <div class="section-number">11</div>
+      <h2>Governing Law &amp; Disputes</h2>
+      <p>These Terms shall be governed by the laws of India. All disputes shall be subject to the exclusive jurisdiction of the courts in Bengaluru, Karnataka.</p>
+    </div>
+
+    <!-- S12 -->
+    <div class="section" id="s12">
+      <div class="section-number">12</div>
+      <h2>Contact &amp; Grievance Redressal</h2>
+      <div class="contact-card">
+        <div class="contact-row">
+          <div class="contact-icon">💬</div>
+          <div>
+            <div class="contact-label">In-App Support</div>
+            <div class="contact-val">Help &amp; Support section in the Dostt App</div>
+          </div>
+        </div>
+        <div class="contact-row">
+          <div class="contact-icon">✉️</div>
+          <div>
+            <div class="contact-label">Email</div>
+            <div class="contact-val"><a href="mailto:support@dostt.in">support@dostt.in</a></div>
+          </div>
+        </div>
+        <div class="contact-row">
+          <div class="contact-icon">🏛️</div>
+          <div>
+            <div class="contact-label">Grievance Officer</div>
+            <div class="contact-val">Shruti Gupta</div>
+            <div class="contact-val"><a href="mailto:grievance.officer@dostt.in">grievance.officer@dostt.in</a></div>
+            <div class="contact-addr">1501, 19th Main Road, Sector 1, HSR Layout<br />Bengaluru – 560102, India</div>
+          </div>
+        </div>
+        <div class="contact-row">
+          <div class="contact-icon">🌐</div>
+          <div>
+            <div class="contact-label">Website</div>
+            <div class="contact-val"><a href="https://www.dostt.in" target="_blank" rel="noopener">www.dostt.in</a></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+
+  <div class="footer">
+    <p>© Behtar Technology Private Limited. All rights reserved.</p>
+    <p style="margin-top:6px;">
+      <a href="https://www.dostt.in/terms" target="_blank" rel="noopener">Terms of Use</a>
+      &nbsp;·&nbsp;
+      <a href="https://www.dostt.in/privacypolicy" target="_blank" rel="noopener">Privacy Policy</a>
+      &nbsp;·&nbsp;
+      <a href="https://www.dostt.in/guidelines" target="_blank" rel="noopener">Community Guidelines</a>
+    </p>
+  </div>
+
+</body>
+</html>

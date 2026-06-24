@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(artifact-design)",
+      "Skill(artifact-design:*)",
+      "Bash(node --check public/leaderboard.js)"
+    ]
+  }
+}

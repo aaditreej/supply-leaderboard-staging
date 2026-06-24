@@ -1,0 +1,20 @@
+{
+  "name": "dostt-leaderboard",
+  "version": "1.0.0",
+  "description": "Dostt listener leaderboard site",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "setup": "node scripts/setup_db.js"
+  },
+  "dependencies": {
+    "connect-pg-simple": "^9.0.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "node-fetch": "^2.7.0",
+    "pg": "^8.12.0",
+    "session-file-store": "^1.5.0"
+  }
+}
