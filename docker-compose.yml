@@ -5,6 +5,10 @@ services:
     ports:
       - "3000:3000"
     env_file: .env
+    environment:
+      # Override DB URL to use the docker service name as host, not localhost
+      DATABASE_URL: postgres://dostt:dostt_secret@db:5432/dostt_rewards
+      PORT: 3000
     depends_on:
       db:
         condition: service_healthy
@@ -13,15 +17,15 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: leaderboard
+      POSTGRES_USER: dostt
+      POSTGRES_PASSWORD: dostt_secret
+      POSTGRES_DB: dostt_rewards
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U dostt -d dostt_rewards"]
       interval: 5s
       timeout: 5s
       retries: 5
