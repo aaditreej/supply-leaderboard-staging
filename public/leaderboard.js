@@ -355,13 +355,8 @@ function renderFlatRows(data, prevPool) {
       bar.style.width = bar.dataset.target + '%';
     });
 
-    // Scroll leaderboard so user's row is centered in view
-    const meRow = lbRows.querySelector('.lb-row.is-me');
-    if (meRow) {
-      const rowMid  = meRow.offsetTop + meRow.offsetHeight / 2;
-      const listMid = lbWrap.clientHeight / 2;
-      lbWrap.scrollTop = rowMid - listMid;
-    }
+    // Start list from top — sticky keeps the YOU row visible at bottom
+    lbWrap.scrollTop = 0;
   });
 
   const delta = drift.rankDelta();

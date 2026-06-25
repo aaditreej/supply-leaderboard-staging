@@ -122,6 +122,15 @@ async function loadCacheFromDB() {
 let db          = null;
 let dbAvailable = false;
 
+// naturalTargetRank: maps global 0-based index to a pool display rank using percentile spread.
+// Top 3 globally get rank 1/2/3. Everyone else maps across 4-18 by percentile so the board
+// shows variety from day 1 without needing drift history.
+function naturalTargetRank(G, N) {
+  if (G < 3) return G + 1;
+  const pct = N > 1 ? G / (N - 1) : 0;
+  return Math.max(4, Math.min(18, Math.round(4 + pct * 14)));
+}
+
 // placeInPool: given global 0-based index G, total N, target position, returns slice bounds + userPos
 function placeInPool(G, N, targetRank) {
   const above = G;
@@ -195,24 +204,30 @@ async function refreshPoolState() {
 
       let targetRank;
 
+      const natural = naturalTargetRank(i, N);
+
       if (!current) {
-        targetRank = i < 20 ? i + 1 : 11;
+        // New qualifier — seed from real percentile position
+        targetRank = natural;
+      } else if (current.target_rank === 11 && natural !== 11) {
+        // Row was seeded with old default 11 but percentile says different — rescue it
+        targetRank = natural;
       } else {
         const delta = Number(listener.talktime_secs) - Number(current.talktime_secs);
         const r = Math.random();
         if (delta <= 0) {
-          // Inactive: 50% stay, 30% down 1, 15% up 1, 5% ±2
-          if      (r < 0.50) targetRank = current.target_rank;
-          else if (r < 0.80) targetRank = current.target_rank + 1;
-          else if (r < 0.95) targetRank = current.target_rank - 1;
-          else               targetRank = current.target_rank + (Math.random() < 0.5 ? -2 : +2);
+          // Inactive: 35% stay, 35% down 1, 20% down 2, 10% up 1
+          if      (r < 0.35) targetRank = current.target_rank;
+          else if (r < 0.70) targetRank = current.target_rank + 1;
+          else if (r < 0.90) targetRank = current.target_rank + 2;
+          else               targetRank = current.target_rank - 1;
         } else {
-          // Active: 70% up 1, 20% stay, 10% up 2 — never down
-          if      (r < 0.70) targetRank = current.target_rank - 1;
-          else if (r < 0.90) targetRank = current.target_rank;
-          else               targetRank = current.target_rank - 2;
+          // Active: 50% up 1, 25% up 2, 20% stay, 5% up 3
+          if      (r < 0.50) targetRank = current.target_rank - 1;
+          else if (r < 0.75) targetRank = current.target_rank - 2;
+          else if (r < 0.95) targetRank = current.target_rank;
+          else               targetRank = current.target_rank - 3;
         }
-        // Floor: if 3+ people above globally, never target top-3
         if (i >= 3) targetRank = Math.max(4, targetRank);
         targetRank = Math.max(1, Math.min(20, targetRank));
       }
@@ -614,9 +629,9 @@ app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
       });
     }
 
-    // Default: use real global rank for top-20, 11 for everyone else.
+    // Default: percentile-based rank so no-DB fallback still shows variety.
     // With DB this gets overwritten by the drift-adjusted stored value.
-    const naturalRank = G < 20 ? G + 1 : 11;
+    const naturalRank = naturalTargetRank(G, N);
     let targetRank = naturalRank;
     if (dbAvailable) {
       const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -692,7 +707,7 @@ app.get('/api/leaderboard/yesterday', requireAuth, async (req, res) => {
     const G = sorted.findIndex(r => String(r.user_id) === String(userId));
     if (G === -1) return res.json(null);
 
-    const { userPos } = placeInPool(G, N, G < 20 ? G + 1 : 11);
+    const { userPos } = placeInPool(G, N, naturalTargetRank(G, N));
 
     res.json({
       user_id:          sorted[G].user_id,
