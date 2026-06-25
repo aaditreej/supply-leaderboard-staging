@@ -133,6 +133,14 @@ function naturalTargetRank(G, N) {
   return Math.max(4, Math.min(11, Math.round(4 + pct * 7)));
 }
 
+// Server-side talktime formatter (mirrors frontend fmtTalktime)
+function fmtSecs(s) {
+  s = Math.round(Number(s) || 0);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
 // placeInPool: given global 0-based index G, total N, target position, returns slice bounds + userPos
 function placeInPool(G, N, targetRank) {
   const above = G;
@@ -199,7 +207,7 @@ async function refreshPoolState() {
 
     try {
       const existing = await db.query(
-        `SELECT talktime_secs, target_rank FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
+        `SELECT talktime_secs, target_rank, global_rank FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
         [listener.user_id, today]
       );
       const current = existing.rows[0];
@@ -209,27 +217,30 @@ async function refreshPoolState() {
       const natural = naturalTargetRank(i, N);
 
       if (!current) {
-        // New qualifier — seed from real percentile position
+        // New qualifier — seed from percentile position
         targetRank = natural;
       } else if (current.target_rank === 11 && natural !== 11) {
-        // Row was seeded with old default 11 but percentile says different — rescue it
+        // Rescue rows stuck at old default 11
         targetRank = natural;
       } else {
-        const delta = Number(listener.talktime_secs) - Number(current.talktime_secs);
-        const r = Math.random();
-        if (delta <= 0) {
-          // Inactive: 35% stay, 35% down 1, 20% down 2, 10% up 1
-          if      (r < 0.35) targetRank = current.target_rank;
-          else if (r < 0.70) targetRank = current.target_rank + 1;
-          else if (r < 0.90) targetRank = current.target_rank + 2;
-          else               targetRank = current.target_rank - 1;
+        // Drift tied to actual global rank movement this cycle.
+        // globalDelta > 0 means they climbed (lower number = better rank).
+        const prevGlobal = current.global_rank || globalRank;
+        const globalDelta = prevGlobal - globalRank;
+        let move;
+        if      (globalDelta >= 10) move = -3;  // climbed 10+ globally → up 3 in pool
+        else if (globalDelta >=  5) move = -2;
+        else if (globalDelta >=  1) move = -1;
+        else if (globalDelta ===  0) {
+          // No movement — gentle random noise
+          const r = Math.random();
+          move = r < 0.60 ? 0 : r < 0.80 ? 1 : -1;
         } else {
-          // Active: 50% up 1, 25% up 2, 20% stay, 5% up 3
-          if      (r < 0.50) targetRank = current.target_rank - 1;
-          else if (r < 0.75) targetRank = current.target_rank - 2;
-          else if (r < 0.95) targetRank = current.target_rank;
-          else               targetRank = current.target_rank - 3;
+          // Slipped globally — drift down
+          const r = Math.random();
+          move = r < 0.35 ? 0 : r < 0.75 ? 1 : 2;
         }
+        targetRank = current.target_rank + move;
         if (i >= 3) targetRank = Math.max(4, targetRank);
         targetRank = Math.max(1, Math.min(20, targetRank));
       }
@@ -299,20 +310,27 @@ async function midnightSettlement() {
     `, [row.user_id, dateStr]);
   }
 
-  // Snapshot yesterday's display ranks before clearing pool state
-  const yesterdayRows = await db.query(
-    `SELECT user_id, talktime_secs, display_rank FROM leaderboard_pool_state
-     WHERE date_ist = $1 AND qualified = true`,
+  // Snapshot the display rank each user actually saw — compute from their final
+  // target_rank + global_rank (leaderboard_pool_state has no display_rank column).
+  const { rows: poolSnap } = await db.query(
+    `SELECT user_id, talktime_secs, target_rank, global_rank
+     FROM leaderboard_pool_state
+     WHERE date_ist = $1 AND qualified = true
+     ORDER BY global_rank`,
     [dateStr]
   );
-  for (const row of yesterdayRows.rows) {
+  const snapN = poolSnap.length;
+  for (const row of poolSnap) {
+    const G      = (row.global_rank || 1) - 1;
+    const target = row.target_rank || naturalTargetRank(G, snapN);
+    const { userPos: displayRank } = placeInPool(G, snapN, target);
     await db.query(`
       INSERT INTO leaderboard_yesterday_results (user_id, date_ist, talktime_secs, display_rank, updated_at)
       VALUES ($1, $2, $3, $4, NOW())
       ON CONFLICT (user_id) DO UPDATE SET
         date_ist = EXCLUDED.date_ist, talktime_secs = EXCLUDED.talktime_secs,
         display_rank = EXCLUDED.display_rank, updated_at = NOW()
-    `, [row.user_id, dateStr, row.talktime_secs, row.display_rank]);
+    `, [row.user_id, dateStr, row.talktime_secs, displayRank]);
   }
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -350,13 +368,8 @@ async function backfillYesterday() {
   console.log(`Backfilling yesterday pool for ${N} listeners (${dateStr})…`);
 
   for (let i = 0; i < sorted.length; i++) {
-    const listener   = sorted[i];
-    const poolOthers = buildPool(sorted, i); // 19 others via percentile bands
-
-    // Add listener to pool, sort by talktime → their display rank (1-20)
-    const fullPool   = [...poolOthers, listener]
-      .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs));
-    const displayRank = fullPool.findIndex(r => String(r.user_id) === String(listener.user_id)) + 1;
+    const listener  = sorted[i];
+    const { userPos: displayRank } = placeInPool(i, N, naturalTargetRank(i, N));
 
     try {
       await db.query(`
@@ -701,6 +714,26 @@ app.get('/api/leaderboard/yesterday', requireAuth, async (req, res) => {
 
   try {
     const userId = req.session.userId;
+
+    // Prefer the midnight snapshot — this is the rank the user actually saw at day end
+    if (dbAvailable) {
+      try {
+        const { rows: snap } = await db.query(
+          `SELECT talktime_secs, display_rank FROM leaderboard_yesterday_results WHERE user_id = $1`,
+          [userId]
+        );
+        if (snap[0]) {
+          return res.json({
+            user_id:          userId,
+            talktime_secs:    Number(snap[0].talktime_secs),
+            talktime_display: fmtSecs(snap[0].talktime_secs),
+            display_rank:     snap[0].display_rank
+          });
+        }
+      } catch (e) { console.warn('yesterday snapshot read:', e.message); }
+    }
+
+    // Fallback: compute on-demand from Q2 data (no snapshot yet — first day or backfill running)
     const sorted = (await fetchOrCache('yesterday', 2 * 60 * 60 * 1000, process.env.REDASH_QUERY_2_ID))
       .slice()
       .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
