@@ -420,7 +420,7 @@ function renderStreak(data) {
   }).join('');
 
   const bonusMsg = daysTo > 0
-    ? `<span>${daysTo} day${daysTo !== 1 ? 's' : ''} to ₹500 bonus</span>`
+    ? `<span>${daysTo} day${daysTo !== 1 ? 's' : ''} to ₹100 bonus</span>`
     : `<span style="color:var(--accent)">🎉 Bonus unlocked!</span>`;
 
   streakSection.innerHTML = `

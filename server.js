@@ -563,7 +563,7 @@ function mockStreakData(userId) {
     days:           [false, false, true, true, true, true, true],
     current_streak: 5,
     days_to_bonus:  2,
-    next_bonus_inr: 500
+    next_bonus_inr: 100
   };
 }
 
@@ -784,7 +784,7 @@ app.get('/api/leaderboard/streak', requireAuth, async (req, res) => {
       days:           Array.from({ length: 7 }, (_, i) => i < filled),
       current_streak: streak,
       days_to_bonus:  daysToBonus,
-      next_bonus_inr: 500
+      next_bonus_inr: 100
     });
   } catch (err) {
     console.error('/api/leaderboard/streak:', err.message);

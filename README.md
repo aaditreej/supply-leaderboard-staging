@@ -9,7 +9,7 @@ A daily talktime leaderboard for Dostt listeners (experts). Each listener sees a
 - **Qualify** — accumulate ≥ 10 minutes of call talktime in a calendar day (IST)
 - **Pool** — each listener is placed in a pool of 20 near-ranked competitors; display rank is 1–20 within that pool
 - **Podium rewards** — credited at midnight IST: Rank 1 → ₹1,500 · Rank 2 → ₹1,000 · Rank 3 → ₹500 (all as Dostt coins)
-- **Streak bonus** — ₹500 in coins for every 7 consecutive qualifying days
+- **Streak bonus** — ₹100 in coins for every 7 consecutive qualifying days
 - **Ranks drift** — display rank updates every 10 minutes using a small random drift so the board feels live without exposing exact global position
 
 ---
