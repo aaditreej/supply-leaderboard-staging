@@ -522,13 +522,14 @@ body {
 .lb-row:active { background: rgba(255,255,255,0.03); }
 
 .lb-row.is-me {
-  background: var(--surface-own);
+  /* Solid background — semi-transparent would let rows behind bleed through */
+  background: #1e1a38;
   border-top: 1px solid rgba(124,58,237,0.28);
   border-bottom: 1px solid rgba(124,58,237,0.28);
   position: sticky;
   bottom: 0;
   z-index: 5;
-  box-shadow: 0 -8px 24px rgba(0,0,0,0.55);
+  box-shadow: 0 -10px 28px rgba(0,0,0,0.7);
 }
 
 /* Left accent bar on own row */
@@ -648,34 +649,15 @@ body {
 
 .lb-reward.has-reward { color: var(--gold); }
 
-/* Gap / lead rows */
-.lb-gap-row {
-  padding: 8px 16px;
-  background: rgba(124,58,237,0.05);
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-  animation: fadeIn 0.3s ease both;
-}
-
-.lb-gap-text {
-  font-size: 0.7rem;
+/* Inline gap / lead hint inside the YOU row */
+.lb-me-hint {
+  font-size: 0.68rem;
   color: var(--sub);
-  text-align: center;
+  margin-top: 4px;
+  line-height: 1.4;
 }
-
-.lb-gap-text strong { color: var(--accent-2); }
-
-.lb-leading-row {
-  padding: 7px 16px;
-  background: rgba(46,204,113,0.05);
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-  animation: fadeIn 0.3s ease both;
-}
-
-.lb-leading-text {
-  font-size: 0.7rem;
-  color: var(--green);
-  text-align: center;
-}
+.lb-me-hint strong { color: var(--accent-2); }
+.lb-me-hint--lead  { color: var(--green); }
 
 /* ── Streak section ──────────────────────────────────────────────── */
 .streak-section {

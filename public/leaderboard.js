@@ -312,6 +312,23 @@ function renderFlatRows(data, prevPool) {
     row.dataset.userId = member.user_id;
     row.style.setProperty('--i', idx);
 
+    // Build inline gap/lead hint for the YOU row so it stays inside the sticky element
+    let meHint = '';
+    if (isMe) {
+      if (data.my_display_rank > 1 && data.gap_to_next_secs > 0 && data.gap_to_next_rank) {
+        const gapMins = Math.ceil(data.gap_to_next_secs / 60);
+        const eta = drift.minsToNextRank(data.gap_to_next_secs);
+        meHint = `<div class="lb-me-hint">
+          <strong>${gapMins}m</strong> behind #${data.gap_to_next_rank}
+          ${eta ? `· ~${eta}m at pace` : ''}
+        </div>`;
+      } else if (leadOverNextSecs > 0) {
+        meHint = `<div class="lb-me-hint lb-me-hint--lead">
+          ${fmtTalktime(leadOverNextSecs)} ahead of #${(data.my_display_rank || 0) + 1}
+        </div>`;
+      }
+    }
+
     row.innerHTML = `
       <div class="lb-rank">
         <span class="lb-rank-num">#${rank}</span>
@@ -322,31 +339,11 @@ function renderFlatRows(data, prevPool) {
           <div class="lb-bar-fill ${isMe ? 'me' : 'other'}" style="width:0%" data-target="${pct.toFixed(1)}"></div>
         </div>
         <div class="lb-bar-label">${fmtTalktime(member.talktime_secs)}</div>
+        ${meHint}
       </div>
     `;
 
     lbRows.appendChild(row);
-
-    if (isMe) {
-      if (data.my_display_rank > 1 && data.gap_to_next_secs > 0 && data.gap_to_next_rank) {
-        const gapRow = document.createElement('div');
-        gapRow.className = 'lb-gap-row';
-        const gapMins = Math.ceil(data.gap_to_next_secs / 60);
-        const eta = drift.minsToNextRank(data.gap_to_next_secs);
-        gapRow.innerHTML = `<div class="lb-gap-text">
-          <strong>${gapMins}m</strong> behind rank #${data.gap_to_next_rank}
-          ${eta ? `<span style="color:var(--sub)"> · ~${eta}m at current pace</span>` : ''}
-        </div>`;
-        lbRows.appendChild(gapRow);
-      } else if (leadOverNextSecs > 0) {
-        const leadRow = document.createElement('div');
-        leadRow.className = 'lb-leading-row';
-        leadRow.innerHTML = `<div class="lb-leading-text">
-          ${fmtTalktime(leadOverNextSecs)} ahead of rank #${(data.my_display_rank || 0) + 1}
-        </div>`;
-        lbRows.appendChild(leadRow);
-      }
-    }
   });
 
   requestAnimationFrame(() => {
