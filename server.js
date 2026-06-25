@@ -128,7 +128,9 @@ let dbAvailable = false;
 function naturalTargetRank(G, N) {
   if (G < 3) return G + 1;
   const pct = N > 1 ? G / (N - 1) : 0;
-  return Math.max(4, Math.min(18, Math.round(4 + pct * 14)));
+  // Cap at 11 — nobody sees worse than 11th, keeps the competitive feel.
+  // Drift can move ranks in either direction from here during the day.
+  return Math.max(4, Math.min(11, Math.round(4 + pct * 7)));
 }
 
 // placeInPool: given global 0-based index G, total N, target position, returns slice bounds + userPos
