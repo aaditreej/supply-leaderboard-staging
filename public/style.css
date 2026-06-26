@@ -530,8 +530,8 @@ body {
 
 /* ── Flat leaderboard list (rank 4+, fixed-height scroll) ───────── */
 .lb-list {
-  margin-bottom: 12px;
-  max-height: clamp(260px, 40vh, 420px);
+  margin-bottom: 6px;
+  max-height: clamp(200px, 30vh, 340px);
   overflow-y: auto;
   overflow-x: hidden;
   animation: fadeUp 0.35s 160ms ease both;
@@ -704,7 +704,7 @@ body {
 
 /* ── Streak section ──────────────────────────────────────────────── */
 .streak-section {
-  padding: 14px 0 10px;
+  padding: 10px 0 8px;
   margin-bottom: 10px;
   border-top: 1px solid rgba(255,255,255,0.07);
   animation: fadeUp 0.35s 180ms ease both;
