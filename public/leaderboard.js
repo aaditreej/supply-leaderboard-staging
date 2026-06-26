@@ -260,18 +260,19 @@ function renderPodium(data) {
 
   const rewardMap    = { 1: '₹1,500', 2: '₹1,000', 3: '₹500' };
   const medalColors  = { 1: 'var(--gold)', 2: 'var(--silver)', 3: 'var(--bronze)' };
-  const medals       = { 1: '🥇', 2: '🥈', 3: '🥉' };
 
   function slotHTML(rank) {
     const m = slots[rank];
     if (!m) return `<div class="podium-slot p${rank} empty"></div>`;
     const isMe = m.is_me;
     const avatarIdx = (Number(m.user_id) % 3) + 1;
+    const crown = rank === 1 ? `<div class="podium-crown">👑</div>` : '';
     return `
       <div class="podium-slot p${rank}${isMe ? ' is-me' : ''}">
+        ${crown}
         <div class="podium-circle r${rank}${isMe ? ' me' : ''}">
           <img class="podium-avatar" src="/brand/avatar${avatarIdx}.jpeg" alt="">
-          <span class="podium-medal-badge">${medals[rank]}</span>
+          <span class="podium-rank-badge rb${rank}">${rank}</span>
         </div>
         <div class="podium-tt">${fmtTalktime(m.talktime_secs)}</div>
         <div class="podium-rew" style="color:${medalColors[rank]}">${rewardMap[rank]}</div>

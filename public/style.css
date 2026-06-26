@@ -322,8 +322,8 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  gap: 4px;
-  padding: 2px 4px 6px;
+  gap: 6px;
+  padding: 2px 4px 8px;
   animation: fadeUp 0.35s 100ms ease both;
 }
 
@@ -332,13 +332,43 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  position: relative;
 }
 
 /* Elevation — DOM order is p2, p1, p3 */
 .podium-slot.p1 { margin-top: 0;   order: 2; }
-.podium-slot.p2 { margin-top: 18px; order: 1; }
-.podium-slot.p3 { margin-top: 30px; order: 3; }
+.podium-slot.p2 { margin-top: 32px; order: 1; }
+.podium-slot.p3 { margin-top: 50px; order: 3; }
+
+/* Radial glow halo behind rank 1 avatar */
+.podium-slot.p1::before {
+  content: '';
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  background: radial-gradient(ellipse at center, rgba(248,182,41,0.2) 0%, rgba(248,182,41,0.06) 45%, transparent 70%);
+  border-radius: 50%;
+  top: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.podium-crown {
+  font-size: 1.5rem;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 0 8px rgba(248,182,41,0.8));
+  animation: crownPulse 2.4s ease-in-out infinite;
+}
+
+@keyframes crownPulse {
+  0%, 100% { transform: scale(1) translateY(0);   filter: drop-shadow(0 0 6px rgba(248,182,41,0.7)); }
+  50%       { transform: scale(1.1) translateY(-2px); filter: drop-shadow(0 0 14px rgba(248,182,41,1)); }
+}
 
 .podium-circle {
   border-radius: 50%;
@@ -351,28 +381,29 @@ body {
   transition: transform 0.2s;
   width: 52px;
   height: 52px;
+  z-index: 1;
 }
 
-.podium-slot.p1 .podium-circle { width: 62px;  height: 62px;  border-width: 2.5px; }
-.podium-slot.p2 .podium-circle { width: 48px;  height: 48px; }
-.podium-slot.p3 .podium-circle { width: 40px;  height: 40px; }
+.podium-slot.p1 .podium-circle { width: 90px; height: 90px; border-width: 3px; }
+.podium-slot.p2 .podium-circle { width: 66px; height: 66px; border-width: 2.5px; }
+.podium-slot.p3 .podium-circle { width: 54px; height: 54px; }
 
 .podium-circle.r1 {
   background: rgba(248,182,41,0.1);
-  border-color: rgba(248,182,41,0.55);
-  box-shadow: 0 0 0 1px rgba(248,182,41,0.12), 0 6px 20px rgba(248,182,41,0.2);
+  border-color: var(--gold);
+  box-shadow: 0 0 0 4px rgba(248,182,41,0.2), 0 0 32px rgba(248,182,41,0.5);
 }
 
 .podium-circle.r2 {
   background: rgba(184,196,204,0.07);
-  border-color: rgba(184,196,204,0.45);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  border-color: rgba(184,196,204,0.6);
+  box-shadow: 0 0 0 2px rgba(184,196,204,0.1), 0 0 16px rgba(184,196,204,0.25);
 }
 
 .podium-circle.r3 {
   background: rgba(205,140,90,0.07);
-  border-color: rgba(205,140,90,0.4);
-  box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+  border-color: rgba(205,140,90,0.55);
+  box-shadow: 0 0 0 2px rgba(205,140,90,0.1), 0 0 14px rgba(205,140,90,0.2);
 }
 
 .podium-circle.me {
@@ -381,24 +412,31 @@ body {
   animation: pulse 2.5s ease-in-out infinite;
 }
 
-.podium-medal-badge {
+/* Rank number chip at bottom of each avatar */
+.podium-rank-badge {
   position: absolute;
-  top: -8px;
+  bottom: -9px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 800;
   line-height: 1;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(0,0,0,0.4);
+  padding: 0 4px;
+  z-index: 2;
 }
 
-.podium-rank-inner {
-  font-size: 1.4rem;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
+.podium-rank-badge.rb1 { background: var(--gold);   color: #1c1200; }
+.podium-rank-badge.rb2 { background: var(--silver); color: #111418; }
+.podium-rank-badge.rb3 { background: var(--bronze); color: #180900; }
 
-.podium-slot.p1 .podium-rank-inner { font-size: 1.8rem; }
-.podium-slot.p3 .podium-rank-inner { font-size: 1.2rem; }
+.podium-slot.p1 .podium-rank-badge { min-width: 24px; height: 24px; font-size: 0.78rem; bottom: -11px; }
 
 .podium-avatar {
   width: 100%;
@@ -410,12 +448,15 @@ body {
 }
 
 .podium-tt {
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text);
   font-feature-settings: "tnum";
   text-align: center;
+  margin-top: 6px;
 }
+
+.podium-slot.p1 .podium-tt { font-size: 0.8rem; }
 
 .podium-rew {
   font-size: 0.78rem;
@@ -423,6 +464,8 @@ body {
   font-feature-settings: "tnum";
   text-align: center;
 }
+
+.podium-slot.p1 .podium-rew { font-size: 0.88rem; }
 
 .podium-you-label {
   font-size: 0.55rem;
