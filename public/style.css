@@ -531,7 +531,7 @@ body {
 /* ── Flat leaderboard list (rank 4+, fixed-height scroll) ───────── */
 .lb-list {
   margin-bottom: 6px;
-  max-height: clamp(200px, 30vh, 340px);
+  max-height: clamp(220px, 36vh, 400px);
   overflow-y: auto;
   overflow-x: hidden;
   animation: fadeUp 0.35s 160ms ease both;
