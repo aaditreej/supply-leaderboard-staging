@@ -323,7 +323,7 @@ body {
   align-items: flex-start;
   justify-content: center;
   gap: 6px;
-  padding: 2px 4px 8px;
+  padding: 0px 4px 4px;
   animation: fadeUp 0.35s 100ms ease both;
 }
 
@@ -338,8 +338,8 @@ body {
 
 /* Elevation — DOM order is p2, p1, p3 */
 .podium-slot.p1 { margin-top: 0;   order: 2; }
-.podium-slot.p2 { margin-top: 32px; order: 1; }
-.podium-slot.p3 { margin-top: 50px; order: 3; }
+.podium-slot.p2 { margin-top: 22px; order: 1; }
+.podium-slot.p3 { margin-top: 36px; order: 3; }
 
 /* Radial glow halo behind rank 1 avatar */
 .podium-slot.p1::before {
@@ -357,7 +357,7 @@ body {
 }
 
 .podium-crown {
-  font-size: 1.5rem;
+  font-size: 1.2rem;
   line-height: 1;
   position: relative;
   z-index: 1;
@@ -384,9 +384,9 @@ body {
   z-index: 1;
 }
 
-.podium-slot.p1 .podium-circle { width: 90px; height: 90px; border-width: 3px; }
-.podium-slot.p2 .podium-circle { width: 66px; height: 66px; border-width: 2.5px; }
-.podium-slot.p3 .podium-circle { width: 54px; height: 54px; }
+.podium-slot.p1 .podium-circle { width: 76px; height: 76px; border-width: 3px; }
+.podium-slot.p2 .podium-circle { width: 56px; height: 56px; border-width: 2.5px; }
+.podium-slot.p3 .podium-circle { width: 46px; height: 46px; }
 
 .podium-circle.r1 {
   background: rgba(248,182,41,0.1);
