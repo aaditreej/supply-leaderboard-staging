@@ -34,6 +34,11 @@ async function setup() {
   `);
 
   await query(`
+    ALTER TABLE leaderboard_pool_state
+      ADD COLUMN IF NOT EXISTS pool_members JSONB DEFAULT NULL;
+  `);
+
+  await query(`
     CREATE TABLE IF NOT EXISTS listener_streak (
       user_id              INTEGER PRIMARY KEY,
       current_streak       INTEGER DEFAULT 0,

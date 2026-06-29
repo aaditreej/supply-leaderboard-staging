@@ -206,57 +206,37 @@ async function refreshPoolState() {
     const globalRank = i + 1;
 
     try {
-      const existing = await db.query(
-        `SELECT talktime_secs, target_rank, global_rank FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
+      const { rows: [current] } = await db.query(
+        `SELECT global_rank, pool_members FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
         [listener.user_id, today]
       );
-      const current = existing.rows[0];
 
-      let targetRank;
+      if (!current || !current.pool_members) {
+        // New qualifier (or row predates frozen-pool feature) — assign pool now and lock it.
+        const naturalRank = naturalTargetRank(i, N);
+        const { takeAbove, takeBelow } = placeInPool(i, N, naturalRank);
+        const poolSlice = qualifiedRows.slice(i - takeAbove, i + takeBelow + 1);
+        const memberIds = JSON.stringify(poolSlice.map(r => String(r.user_id)));
 
-      const natural = naturalTargetRank(i, N);
-
-      if (!current) {
-        // New qualifier — seed from percentile position
-        targetRank = natural;
-      } else if (current.target_rank === 11 && natural !== 11) {
-        // Rescue rows stuck at old default 11
-        targetRank = natural;
+        await db.query(`
+          INSERT INTO leaderboard_pool_state
+            (user_id, date_ist, talktime_secs, qualified, global_rank, target_rank, pool_members, last_updated)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+          ON CONFLICT (user_id, date_ist) DO UPDATE SET
+            talktime_secs = EXCLUDED.talktime_secs,
+            qualified     = EXCLUDED.qualified,
+            global_rank   = EXCLUDED.global_rank,
+            pool_members  = COALESCE(leaderboard_pool_state.pool_members, EXCLUDED.pool_members),
+            last_updated  = NOW()
+        `, [listener.user_id, today, Number(listener.talktime_secs), true, globalRank, naturalRank, memberIds]);
       } else {
-        // Drift tied to actual global rank movement this cycle.
-        // globalDelta > 0 means they climbed (lower number = better rank).
-        const prevGlobal = current.global_rank || globalRank;
-        const globalDelta = prevGlobal - globalRank;
-        let move;
-        if      (globalDelta >= 10) move = -3;  // climbed 10+ globally → up 3 in pool
-        else if (globalDelta >=  5) move = -2;
-        else if (globalDelta >=  1) move = -1;
-        else if (globalDelta ===  0) {
-          // No movement — gentle random noise
-          const r = Math.random();
-          move = r < 0.60 ? 0 : r < 0.80 ? 1 : -1;
-        } else {
-          // Slipped globally — drift down
-          const r = Math.random();
-          move = r < 0.35 ? 0 : r < 0.75 ? 1 : 2;
-        }
-        targetRank = current.target_rank + move;
-        if (i >= 3) targetRank = Math.max(4, targetRank);
-        targetRank = Math.max(1, Math.min(20, targetRank));
+        // Pool is frozen — only refresh live stats used by midnight settlement.
+        await db.query(`
+          UPDATE leaderboard_pool_state
+          SET talktime_secs = $1, global_rank = $2, last_updated = NOW()
+          WHERE user_id = $3 AND date_ist = $4
+        `, [Number(listener.talktime_secs), globalRank, listener.user_id, today]);
       }
-
-      await db.query(`
-        INSERT INTO leaderboard_pool_state
-          (user_id, date_ist, talktime_secs, qualified, global_rank, target_rank, last_updated)
-        VALUES ($1,$2,$3,$4,$5,$6,NOW())
-        ON CONFLICT (user_id, date_ist) DO UPDATE SET
-          talktime_secs = EXCLUDED.talktime_secs,
-          qualified     = EXCLUDED.qualified,
-          global_rank   = EXCLUDED.global_rank,
-          target_rank   = EXCLUDED.target_rank,
-          last_updated  = NOW()
-      `, [listener.user_id, today, Number(listener.talktime_secs), true, globalRank, targetRank]);
-
     } catch (e) {
       console.error(`refreshPoolState user ${listener.user_id}:`, e.message);
     }
@@ -310,20 +290,37 @@ async function midnightSettlement() {
     `, [row.user_id, dateStr]);
   }
 
-  // Snapshot the display rank each user actually saw — compute from their final
-  // target_rank + global_rank (leaderboard_pool_state has no display_rank column).
+  // Snapshot the display rank each user actually saw at midnight.
+  // For frozen-pool users: rank by final talktime within their locked pool.
+  // Fallback: compute from target_rank + global_rank for any without pool_members.
   const { rows: poolSnap } = await db.query(
-    `SELECT user_id, talktime_secs, target_rank, global_rank
+    `SELECT user_id, talktime_secs, target_rank, global_rank, pool_members
      FROM leaderboard_pool_state
-     WHERE date_ist = $1 AND qualified = true
-     ORDER BY global_rank`,
+     WHERE date_ist = $1 AND qualified = true`,
     [dateStr]
   );
+
+  // Build a talktime map for frozen-pool rank computation
+  const snapTtMap = {};
+  for (const row of poolSnap) snapTtMap[String(row.user_id)] = Number(row.talktime_secs);
+
   const snapN = poolSnap.length;
   for (const row of poolSnap) {
-    const G      = (row.global_rank || 1) - 1;
-    const target = row.target_rank || naturalTargetRank(G, snapN);
-    const { userPos: displayRank } = placeInPool(G, snapN, target);
+    let displayRank;
+    if (row.pool_members && Array.isArray(row.pool_members)) {
+      // Rank by final talktime within the frozen pool — exactly what the user last saw.
+      const sorted = row.pool_members
+        .map(uid => ({ uid: String(uid), tt: snapTtMap[String(uid)] || 0 }))
+        .sort((a, b) => b.tt - a.tt || Number(a.uid) - Number(b.uid));
+      const pos = sorted.findIndex(m => m.uid === String(row.user_id));
+      displayRank = pos >= 0 ? pos + 1 : null;
+    } else {
+      const G      = (row.global_rank || 1) - 1;
+      const target = row.target_rank || naturalTargetRank(G, snapN);
+      const { userPos } = placeInPool(G, snapN, target);
+      displayRank = userPos;
+    }
+    if (!displayRank) continue;
     await db.query(`
       INSERT INTO leaderboard_yesterday_results (user_id, date_ist, talktime_secs, display_rank, updated_at)
       VALUES ($1, $2, $3, $4, NOW())
@@ -644,33 +641,62 @@ app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
       });
     }
 
-    // Default: percentile-based rank so no-DB fallback still shows variety.
-    // With DB this gets overwritten by the drift-adjusted stored value.
-    const naturalRank = naturalTargetRank(G, N);
-    let targetRank = naturalRank;
+    // Build a talktime lookup for frozen-pool use
+    const ttMap = {};
+    for (const r of qualifiedRows) ttMap[String(r.user_id)] = r;
+
+    // Try to load frozen pool members from DB; assign + freeze on first access.
+    let poolRows;
+    let userPos;
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
     if (dbAvailable) {
-      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       try {
         const { rows: stateRows } = await db.query(
-          `SELECT target_rank FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
+          `SELECT pool_members, target_rank FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
           [userId, today]
         );
-        if (stateRows[0]) {
-          targetRank = stateRows[0].target_rank || naturalRank;
+
+        if (stateRows[0]?.pool_members) {
+          // Frozen pool exists — build from stored member IDs using live talktime.
+          const memberIds = stateRows[0].pool_members;
+          poolRows = memberIds
+            .map(uid => ttMap[String(uid)])
+            .filter(Boolean)
+            .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
+          const myIdx = poolRows.findIndex(r => String(r.user_id) === String(userId));
+          userPos = myIdx >= 0 ? myIdx + 1 : poolRows.length + 1;
         } else {
-          // First load — seed DB so next 10-min job picks it up; seed from real rank
+          // First access — compute pool, freeze it.
+          const naturalRank = naturalTargetRank(G, N);
+          const { takeAbove, takeBelow, userPos: up } = placeInPool(G, N, naturalRank);
+          poolRows = qualifiedRows.slice(G - takeAbove, G + takeBelow + 1);
+          userPos  = up;
+          const memberIds = JSON.stringify(poolRows.map(r => String(r.user_id)));
           await db.query(`
             INSERT INTO leaderboard_pool_state
-              (user_id, date_ist, talktime_secs, qualified, global_rank, target_rank, last_updated)
-            VALUES ($1,$2,$3,$4,$5,$6,NOW())
-            ON CONFLICT (user_id, date_ist) DO NOTHING
-          `, [userId, today, myTalktime, true, G + 1, naturalRank]);
+              (user_id, date_ist, talktime_secs, qualified, global_rank, target_rank, pool_members, last_updated)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+            ON CONFLICT (user_id, date_ist) DO UPDATE SET
+              talktime_secs = EXCLUDED.talktime_secs,
+              global_rank   = EXCLUDED.global_rank,
+              pool_members  = COALESCE(leaderboard_pool_state.pool_members, EXCLUDED.pool_members),
+              last_updated  = NOW()
+          `, [userId, today, myTalktime, true, G + 1, naturalRank, memberIds]);
         }
-      } catch (e) { console.warn('pool state read:', e.message); }
+      } catch (e) {
+        console.warn('pool state read:', e.message);
+        // Fallback to on-demand slice
+        const { takeAbove, takeBelow, userPos: up } = placeInPool(G, N, naturalTargetRank(G, N));
+        poolRows = qualifiedRows.slice(G - takeAbove, G + takeBelow + 1);
+        userPos  = up;
+      }
+    } else {
+      // No DB — on-demand slice
+      const { takeAbove, takeBelow, userPos: up } = placeInPool(G, N, naturalTargetRank(G, N));
+      poolRows = qualifiedRows.slice(G - takeAbove, G + takeBelow + 1);
+      userPos  = up;
     }
-
-    const { takeAbove, takeBelow, userPos } = placeInPool(G, N, targetRank);
-    const poolRows = qualifiedRows.slice(G - takeAbove, G + takeBelow + 1);
 
     const pool      = poolRows.map((r, idx) => ({
       user_id:          r.user_id,
@@ -682,7 +708,8 @@ app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
     }));
     const top3      = pool.slice(0, 3).map((r, i) => ({ ...r, reward: i === 0 ? 1500 : i === 1 ? 1000 : 500 }));
     const poolBelow = pool.slice(3);
-    const rowAbove  = takeAbove > 0 ? pool[takeAbove - 1] : null;
+    const myPoolIdx = userPos - 1;
+    const rowAbove  = myPoolIdx > 0 ? pool[myPoolIdx - 1] : null;
     const gapSecs   = rowAbove ? Math.max(0, rowAbove.talktime_secs - myTalktime) : 0;
 
     res.json({
