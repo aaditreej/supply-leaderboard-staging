@@ -645,54 +645,36 @@ app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
     const ttMap = {};
     for (const r of qualifiedRows) ttMap[String(r.user_id)] = r;
 
-    // Try to load frozen pool members from DB; assign + freeze on first access.
+    // Pool assignment is owned exclusively by refreshPoolState() (runs every 10 min).
+    // Direct API requests only READ an existing frozen pool; they never write one.
+    // This prevents early-morning first-access from freezing a tiny pool where the
+    // user naturally appears as rank 1.
     let poolRows;
     let userPos;
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
+    let frozenMembers = null;
     if (dbAvailable) {
       try {
         const { rows: stateRows } = await db.query(
-          `SELECT pool_members, target_rank FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
+          `SELECT pool_members FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
           [userId, today]
         );
+        if (stateRows[0]?.pool_members) frozenMembers = stateRows[0].pool_members;
+      } catch (e) { console.warn('pool state read:', e.message); }
+    }
 
-        if (stateRows[0]?.pool_members) {
-          // Frozen pool exists — build from stored member IDs using live talktime.
-          const memberIds = stateRows[0].pool_members;
-          poolRows = memberIds
-            .map(uid => ttMap[String(uid)])
-            .filter(Boolean)
-            .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
-          const myIdx = poolRows.findIndex(r => String(r.user_id) === String(userId));
-          userPos = myIdx >= 0 ? myIdx + 1 : poolRows.length + 1;
-        } else {
-          // First access — compute pool, freeze it.
-          const naturalRank = naturalTargetRank(G, N);
-          const { takeAbove, takeBelow, userPos: up } = placeInPool(G, N, naturalRank);
-          poolRows = qualifiedRows.slice(G - takeAbove, G + takeBelow + 1);
-          userPos  = up;
-          const memberIds = JSON.stringify(poolRows.map(r => String(r.user_id)));
-          await db.query(`
-            INSERT INTO leaderboard_pool_state
-              (user_id, date_ist, talktime_secs, qualified, global_rank, target_rank, pool_members, last_updated)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
-            ON CONFLICT (user_id, date_ist) DO UPDATE SET
-              talktime_secs = EXCLUDED.talktime_secs,
-              global_rank   = EXCLUDED.global_rank,
-              pool_members  = COALESCE(leaderboard_pool_state.pool_members, EXCLUDED.pool_members),
-              last_updated  = NOW()
-          `, [userId, today, myTalktime, true, G + 1, naturalRank, memberIds]);
-        }
-      } catch (e) {
-        console.warn('pool state read:', e.message);
-        // Fallback to on-demand slice
-        const { takeAbove, takeBelow, userPos: up } = placeInPool(G, N, naturalTargetRank(G, N));
-        poolRows = qualifiedRows.slice(G - takeAbove, G + takeBelow + 1);
-        userPos  = up;
-      }
+    if (frozenMembers) {
+      // Frozen pool exists — build from stored member IDs using live talktime.
+      poolRows = frozenMembers
+        .map(uid => ttMap[String(uid)])
+        .filter(Boolean)
+        .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
+      const myIdx = poolRows.findIndex(r => String(r.user_id) === String(userId));
+      userPos = myIdx >= 0 ? myIdx + 1 : poolRows.length + 1;
     } else {
-      // No DB — on-demand slice
+      // No frozen pool yet (refreshPoolState hasn't run for this user today) —
+      // use a live dynamic slice so the user sees something reasonable.
       const { takeAbove, takeBelow, userPos: up } = placeInPool(G, N, naturalTargetRank(G, N));
       poolRows = qualifiedRows.slice(G - takeAbove, G + takeBelow + 1);
       userPos  = up;
