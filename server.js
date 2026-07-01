@@ -201,6 +201,10 @@ async function refreshPoolState() {
   const N = qualifiedRows.length;
   if (N === 0) return;
 
+  // Build a talktime map for stale-pool detection.
+  const qMap = {};
+  for (const r of qualifiedRows) qMap[String(r.user_id)] = Number(r.talktime_secs);
+
   for (let i = 0; i < qualifiedRows.length; i++) {
     const listener   = qualifiedRows[i];
     const globalRank = i + 1;
@@ -211,8 +215,19 @@ async function refreshPoolState() {
         [listener.user_id, today]
       );
 
-      if (!current || !current.pool_members) {
-        // New qualifier (or row predates frozen-pool feature) — assign pool now and lock it.
+      // Detect stale pool: user is rank 1 in frozen pool AND has 2× the talktime
+      // of the pool's #2 person — they've completely outpaced their original group.
+      let poolIsStale = false;
+      if (current?.pool_members) {
+        const memberTts = current.pool_members
+          .map(uid => qMap[String(uid)] || 0)
+          .sort((a, b) => b - a);
+        const userTt = Number(listener.talktime_secs);
+        poolIsStale = memberTts.length >= 2 && userTt >= (memberTts[1] || 0) * 2;
+      }
+
+      if (!current || !current.pool_members || poolIsStale) {
+        // New qualifier, or pool never assigned, or user has lapped the pool — (re)assign now.
         const naturalRank = naturalTargetRank(i, N);
         const { takeAbove, takeBelow } = placeInPool(i, N, naturalRank);
         const poolSlice = qualifiedRows.slice(i - takeAbove, i + takeBelow + 1);
@@ -226,11 +241,11 @@ async function refreshPoolState() {
             talktime_secs = EXCLUDED.talktime_secs,
             qualified     = EXCLUDED.qualified,
             global_rank   = EXCLUDED.global_rank,
-            pool_members  = COALESCE(leaderboard_pool_state.pool_members, EXCLUDED.pool_members),
+            pool_members  = EXCLUDED.pool_members,
             last_updated  = NOW()
         `, [listener.user_id, today, Number(listener.talktime_secs), true, globalRank, naturalRank, memberIds]);
       } else {
-        // Pool is frozen — only refresh live stats used by midnight settlement.
+        // Pool is valid and frozen — only refresh live stats used by midnight settlement.
         await db.query(`
           UPDATE leaderboard_pool_state
           SET talktime_secs = $1, global_rank = $2, last_updated = NOW()
@@ -822,6 +837,14 @@ const PORT = process.env.PORT || 3000;
       await db.pool.query('SELECT 1');
       dbAvailable = true;
       console.log('DB: connected');
+      // Clear today's frozen pools on every startup so the first refreshPoolState()
+      // call rebuilds them with current data. Pools are re-assigned within seconds.
+      const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      await db.pool.query(
+        `UPDATE leaderboard_pool_state SET pool_members = NULL WHERE date_ist = $1`,
+        [todayIST]
+      );
+      console.log('DB: cleared today\'s pool assignments — will rebuild on first refresh');
     } catch (e) {
       console.warn('DB: unavailable —', e.message);
     }
