@@ -687,6 +687,8 @@ app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
         .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
       const myIdx = poolRows.findIndex(r => String(r.user_id) === String(userId));
       userPos = myIdx >= 0 ? myIdx + 1 : poolRows.length + 1;
+      // If 3+ people are ahead globally, the user can never occupy a podium spot.
+      if (G >= 3) userPos = Math.max(4, userPos);
     } else {
       // No frozen pool yet (refreshPoolState hasn't run for this user today) —
       // use a live dynamic slice so the user sees something reasonable.
