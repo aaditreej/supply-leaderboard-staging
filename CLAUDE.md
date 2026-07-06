@@ -42,22 +42,23 @@ Results are cached in-memory: Q1 = 10 min TTL, Q2/Q3 = 2 hr TTL. Every 10 minute
 
 `MOCK_MODE` is active when `REDASH_QUERY_1_ID` is not set — returns hardcoded mock data so the UI is testable without Redash credentials.
 
-### Pool system
+### Pool system (frozen pools)
 
 Each listener sees a personal pool of 20 (themselves + 19 others), not global ranks. The goal is to show close competitors rather than a demoralising global leaderboard.
 
-**Pool construction** (`buildPool(qualifiedRows, listenerIdx)`):
-- Takes globally sorted qualified listeners and the listener's index
-- Selects up to 15 listeners from within +20 percentile points above, 4 from −10 below
-- Pads to 19 with nearest-percentile others if needed
-- Returns 19 rows (listener added back as position 20, then pool is sorted by talktime → display_rank 1–20)
+**Pool assignment** is owned exclusively by `refreshPoolState()` (runs every 10 min after the Q1 refresh). On a listener's first appearance it slices the globally sorted qualified list around them (`placeInPool` + `naturalTargetRank`: global top 3 target 1/2/3, everyone else 4–11 by percentile) and freezes the 20 member IDs into `leaderboard_pool_state.pool_members` (JSONB) for the rest of the IST day. The `/api/leaderboard/today` endpoint only ever READS pools — it never writes one (a first-access write would freeze tiny early-morning pools where everyone is rank 1).
 
-**Pool persistence** (`leaderboard_pool_state` table): the periodic job `refreshPoolState()` writes each listener's pool to Postgres. Display rank is computed with dampening (any positive delta moves rank up) + random drift (±1 or ±2) to keep the board feeling live. When a listener's row doesn't exist yet, the `/api/leaderboard/today` endpoint writes it on-demand immediately.
+**Display rank** = the listener's live-talktime position within their frozen pool. No drift, no randomness — rank moves only when the listener or their fixed competitors talk.
+
+**Pool re-assignment** happens in `refreshPoolState()` only when: (a) the pool is undersized (`resolved < min(20, N)` — frozen when few had qualified), or (b) the listener floated into their pool's top 3 while not being global top 3 — they're "promoted" into a tougher pool targeted at rank 4 so their shown rank never teleports.
 
 **Display rank rules**:
 - Always 1–20 within personal pool, never global rank
-- Podium shows top 3 of personal pool (not global top 3)
-- `state.display_rank` from DB is what's shown; pool talktime ordering drives the visual bars
+- Only the GLOBAL top 3 may display rank 1/2/3 (podium). Everyone else is capped at 4 — enforced in `refreshPoolState` (promotion), in the today endpoint (consistent remap: the user's row is physically moved to position 4), and in the midnight snapshot
+- With N ≤ 20 qualified, everyone sees the real global board
+- Pool talktime ordering drives the visual bars; `max_talktime_secs` is the true pool max including the user
+
+**IST-day hygiene**: all caches carry an implicit IST date — `fetchOrCache` treats a cache fetched on a previous IST day as expired, `refreshPoolState` refuses to write a previous day's rows under today's date, and `midnightSettlement` clears the in-memory caches. This prevents the post-midnight race where yesterday's talktimes get written as today's.
 
 ### DB tables
 
@@ -70,10 +71,12 @@ All DB operations are gated on `dbAvailable`. When `DATABASE_URL` is absent, fal
 
 ### Midnight settlement (`midnightSettlement()`)
 
-Runs at 00:01 IST via `scheduleAtMidnight`. Sequence:
-1. Updates `listener_streak` for all listeners who qualified yesterday
-2. Snapshots final display ranks into `leaderboard_yesterday_results`
-3. Deletes stale rows from `leaderboard_pool_state`
+Runs at 00:01 IST via `scheduleAtMidnight` (fixed UTC+5:30 offset math — host-timezone independent). Sequence:
+1. Updates `listener_streak` for all listeners who qualified yesterday (idempotent — a double run or second replica leaves streaks unchanged)
+2. Snapshots final display ranks into `leaderboard_yesterday_results` (talktime position within each frozen pool, global-top-3 cap applied)
+3. Deletes stale rows from `leaderboard_pool_state` and clears in-memory caches
+
+The yesterday endpoint serves the snapshot only when its `date_ist` is actually yesterday — a listener who skipped a day falls through to the Q2 on-demand fallback instead of seeing a stale old-date row.
 
 ### Start date
 

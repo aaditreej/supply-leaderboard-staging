@@ -81,7 +81,10 @@ const cache = {
 
 async function fetchOrCache(key, ttlMs, queryId) {
   const now = Date.now();
-  if (cache[key].rows && (now - cache[key].fetchedAt) < ttlMs) {
+  // Fresh = within TTL AND fetched on the same IST day. Crossing midnight IST
+  // invalidates everything: Q1 talktimes reset, and "yesterday" changes meaning.
+  if (cache[key].rows && (now - cache[key].fetchedAt) < ttlMs
+      && istDateOf(cache[key].fetchedAt) === istToday()) {
     return cache[key].rows;
   }
   const rows = await callRedash(queryId);
@@ -191,48 +194,84 @@ function computeStreak(q3Row, qualifiedToday, startStr, todayStr) {
 async function refreshPoolState() {
   if (!dbAvailable || !cache.today.rows) return;
 
-  const rows  = cache.today.rows;
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const today = istToday();
+  // Never write a previous IST day's talktimes under today's date — a fetch that
+  // straddled midnight would seed yesterday's whole cohort as "qualified today".
+  if (istDateOf(cache.today.fetchedAt) !== today) {
+    console.log('refreshPoolState: cache is from a previous IST day — skipping until fresh fetch');
+    return;
+  }
 
-  const qualifiedRows = rows
+  const qualifiedRows = cache.today.rows
     .filter(r => r.qualified === true || r.qualified === 'true')
     .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
 
   const N = qualifiedRows.length;
   if (N === 0) return;
 
-  // Build a talktime map for stale-pool detection.
   const qMap = {};
   for (const r of qualifiedRows) qMap[String(r.user_id)] = Number(r.talktime_secs);
+
+  // One read for all of today's state rows instead of one SELECT per user
+  const stateMap = {};
+  try {
+    const { rows: stateRows } = await db.query(
+      `SELECT user_id, pool_members FROM leaderboard_pool_state WHERE date_ist = $1`,
+      [today]
+    );
+    for (const s of stateRows) stateMap[String(s.user_id)] = s;
+  } catch (e) {
+    console.error('refreshPoolState state read:', e.message);
+    return;
+  }
 
   for (let i = 0; i < qualifiedRows.length; i++) {
     const listener   = qualifiedRows[i];
     const globalRank = i + 1;
+    const userTt     = Number(listener.talktime_secs);
+    const current    = stateMap[String(listener.user_id)];
 
     try {
-      const { rows: [current] } = await db.query(
-        `SELECT global_rank, pool_members FROM leaderboard_pool_state WHERE user_id = $1 AND date_ist = $2`,
-        [listener.user_id, today]
-      );
+      let needsAssign = !current || !current.pool_members;
+      let currentPoolRank = null;
 
-      // Detect stale pool: user is rank 1 in frozen pool AND has 2× the talktime
-      // of the pool's #2 person — they've completely outpaced their original group.
-      let poolIsStale = false;
-      if (current?.pool_members) {
-        const memberTts = current.pool_members
-          .map(uid => qMap[String(uid)] || 0)
-          .sort((a, b) => b - a);
-        const userTt = Number(listener.talktime_secs);
-        poolIsStale = memberTts.length >= 2 && userTt >= (memberTts[1] || 0) * 2;
+      if (!needsAssign) {
+        const members  = current.pool_members.map(String);
+        const resolved = members.filter(uid => qMap[uid] !== undefined);
+
+        // Rank the user currently holds within their frozen pool (live talktime order)
+        const better = resolved.filter(uid =>
+          uid !== String(listener.user_id) &&
+          (qMap[uid] > userTt || (qMap[uid] === userTt && Number(uid) < Number(listener.user_id)))
+        ).length;
+        currentPoolRank = better + 1;
+
+        if (resolved.length < Math.min(20, N)) {
+          // Pool was frozen while few had qualified — grow it now that more exist
+          needsAssign = true;
+        } else if (globalRank > 3 && currentPoolRank <= 3) {
+          // Global-top-3 rule: user floated into their pool's podium without being
+          // global top 3 — promote them into a tougher pool with 3+ genuinely ahead
+          needsAssign = true;
+        }
       }
 
-      if (!current || !current.pool_members || poolIsStale) {
-        // New qualifier, or pool never assigned, or user has lapped the pool — (re)assign now.
-        const naturalRank = naturalTargetRank(i, N);
-        const { takeAbove, takeBelow } = placeInPool(i, N, naturalRank);
+      if (needsAssign) {
+        // Target: global top 3 keep their real rank; a promoted/regrown user lands just
+        // off the podium so their shown rank never teleports backwards mid-day;
+        // brand-new qualifiers spread across 4-11 by percentile.
+        let targetRank;
+        if (i < 3)                targetRank = i + 1;
+        else if (currentPoolRank) targetRank = Math.max(4, Math.min(11, Math.min(currentPoolRank, naturalTargetRank(i, N))));
+        else                      targetRank = naturalTargetRank(i, N);
+
+        const { takeAbove, takeBelow } = placeInPool(i, N, targetRank);
         const poolSlice = qualifiedRows.slice(i - takeAbove, i + takeBelow + 1);
         const memberIds = JSON.stringify(poolSlice.map(r => String(r.user_id)));
 
+        // Overwrite pool_members only when re-assigning a stale pool; for brand-new rows
+        // COALESCE keeps a pool a concurrent replica may have written since our read.
+        const overwrite = !!(current && current.pool_members);
         await db.query(`
           INSERT INTO leaderboard_pool_state
             (user_id, date_ist, talktime_secs, qualified, global_rank, target_rank, pool_members, last_updated)
@@ -241,16 +280,16 @@ async function refreshPoolState() {
             talktime_secs = EXCLUDED.talktime_secs,
             qualified     = EXCLUDED.qualified,
             global_rank   = EXCLUDED.global_rank,
-            pool_members  = EXCLUDED.pool_members,
+            pool_members  = ${overwrite ? 'EXCLUDED.pool_members' : 'COALESCE(leaderboard_pool_state.pool_members, EXCLUDED.pool_members)'},
             last_updated  = NOW()
-        `, [listener.user_id, today, Number(listener.talktime_secs), true, globalRank, naturalRank, memberIds]);
+        `, [listener.user_id, today, userTt, true, globalRank, targetRank, memberIds]);
       } else {
         // Pool is valid and frozen — only refresh live stats used by midnight settlement.
         await db.query(`
           UPDATE leaderboard_pool_state
           SET talktime_secs = $1, global_rank = $2, last_updated = NOW()
           WHERE user_id = $3 AND date_ist = $4
-        `, [Number(listener.talktime_secs), globalRank, listener.user_id, today]);
+        `, [userTt, globalRank, listener.user_id, today]);
       }
     } catch (e) {
       console.error(`refreshPoolState user ${listener.user_id}:`, e.message);
@@ -259,12 +298,15 @@ async function refreshPoolState() {
   console.log(`Pool state refreshed: ${N} qualified listeners`);
 }
 
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // IST is fixed UTC+5:30, no DST
+
 function scheduleAtMidnight(fn) {
-  const ist     = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-  const next    = new Date(ist);
-  next.setDate(next.getDate() + 1);
-  next.setHours(0, 1, 0, 0);
-  const msUntil = next - ist;
+  // Compute the next 00:01 IST as a real epoch timestamp — no locale-string
+  // parsing, immune to the host timezone and its DST transitions.
+  const nowMs   = Date.now();
+  const istNow  = new Date(nowMs + IST_OFFSET_MS); // IST wall clock viewed in the UTC frame
+  const nextIst = Date.UTC(istNow.getUTCFullYear(), istNow.getUTCMonth(), istNow.getUTCDate() + 1, 0, 1, 0, 0);
+  const msUntil = (nextIst - IST_OFFSET_MS) - nowMs;
   setTimeout(async () => {
     try { await fn(); } catch (e) { console.error('Midnight settlement:', e.message); }
     scheduleAtMidnight(fn);
@@ -273,9 +315,8 @@ function scheduleAtMidnight(fn) {
 
 async function midnightSettlement() {
   if (!dbAvailable) return;
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const dateStr = yesterday.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  // Runs at 00:01 IST — settle the IST day that just ended
+  const dateStr = istDateOf(Date.now() - 24 * 60 * 60 * 1000);
   console.log('Midnight settlement for', dateStr);
 
   const qualified = await db.query(
@@ -284,16 +325,22 @@ async function midnightSettlement() {
   );
 
   for (const row of qualified.rows) {
+    // Idempotent: if last_qualifying_date is already dateStr (double run, or a second
+    // replica settling), the streak and bonus count stay unchanged.
     await db.query(`
       INSERT INTO listener_streak (user_id, current_streak, last_qualifying_date, updated_at)
       VALUES ($1, 1, $2, NOW())
       ON CONFLICT (user_id) DO UPDATE SET
         current_streak = CASE
+          WHEN listener_streak.last_qualifying_date = $2::date
+          THEN listener_streak.current_streak
           WHEN listener_streak.last_qualifying_date = ($2::date - INTERVAL '1 day')::date
           THEN listener_streak.current_streak + 1 ELSE 1
         END,
         last_qualifying_date = $2,
         total_bonuses_earned = CASE
+          WHEN listener_streak.last_qualifying_date = $2::date
+          THEN listener_streak.total_bonuses_earned
           WHEN MOD(CASE
             WHEN listener_streak.last_qualifying_date = ($2::date - INTERVAL '1 day')::date
             THEN listener_streak.current_streak + 1 ELSE 1
@@ -329,6 +376,8 @@ async function midnightSettlement() {
         .sort((a, b) => b.tt - a.tt || Number(a.uid) - Number(b.uid));
       const pos = sorted.findIndex(m => m.uid === String(row.user_id));
       displayRank = pos >= 0 ? pos + 1 : null;
+      // Only the global top 3 may finish 1/2/3 — mirrors the live display cap
+      if (displayRank && (row.global_rank || 999) > 3) displayRank = Math.max(4, displayRank);
     } else {
       const G      = (row.global_rank || 1) - 1;
       const target = row.target_rank || naturalTargetRank(G, snapN);
@@ -345,9 +394,14 @@ async function midnightSettlement() {
     `, [row.user_id, dateStr, row.talktime_secs, displayRank]);
   }
 
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  await db.query(`DELETE FROM leaderboard_pool_state WHERE date_ist < $1`, [today]);
-  console.log(`Settlement done: ${qualified.rows.length} streaks updated, ${yesterdayRows.rows.length} display ranks saved`);
+  await db.query(`DELETE FROM leaderboard_pool_state WHERE date_ist < $1`, [istToday()]);
+
+  // Drop the previous day's in-memory caches so the next tick refetches fresh data
+  cache.today     = { rows: null, fetchedAt: null };
+  cache.yesterday = { rows: null, fetchedAt: null };
+  cache.streak    = { rows: null, fetchedAt: null };
+
+  console.log(`Settlement done: ${qualified.rows.length} streaks updated, ${poolSnap.length} display ranks saved`);
 }
 
 async function backfillYesterday() {
@@ -357,9 +411,7 @@ async function backfillYesterday() {
     return;
   }
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const dateStr = yesterday.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const dateStr = istDateOf(Date.now() - 24 * 60 * 60 * 1000);
 
   const existing = await db.query(
     `SELECT COUNT(*) FROM leaderboard_yesterday_results WHERE date_ist = $1`,
@@ -387,7 +439,9 @@ async function backfillYesterday() {
       await db.query(`
         INSERT INTO leaderboard_yesterday_results (user_id, date_ist, talktime_secs, display_rank, updated_at)
         VALUES ($1, $2, $3, $4, NOW())
-        ON CONFLICT (user_id) DO NOTHING
+        ON CONFLICT (user_id) DO UPDATE SET
+          date_ist = EXCLUDED.date_ist, talktime_secs = EXCLUDED.talktime_secs,
+          display_rank = EXCLUDED.display_rank, updated_at = NOW()
       `, [listener.user_id, dateStr, Number(listener.talktime_secs), displayRank]);
     } catch (e) {
       console.error(`backfillYesterday user ${listener.user_id}:`, e.message);
@@ -403,7 +457,12 @@ function getStartDate() {
 }
 
 function istToday() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return istDateOf(Date.now());
+}
+
+// IST calendar date (YYYY-MM-DD) of an epoch-ms timestamp
+function istDateOf(ms) {
+  return new Date(ms).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
 function isStartDate() {
@@ -666,7 +725,7 @@ app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
     // user naturally appears as rank 1.
     let poolRows;
     let userPos;
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const today = istToday();
 
     let frozenMembers = null;
     if (dbAvailable) {
@@ -679,19 +738,31 @@ app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
       } catch (e) { console.warn('pool state read:', e.message); }
     }
 
+    let frozenIdx = -1;
     if (frozenMembers) {
       // Frozen pool exists — build from stored member IDs using live talktime.
       poolRows = frozenMembers
         .map(uid => ttMap[String(uid)])
         .filter(Boolean)
         .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
-      const myIdx = poolRows.findIndex(r => String(r.user_id) === String(userId));
-      userPos = myIdx >= 0 ? myIdx + 1 : poolRows.length + 1;
-      // If 3+ people are ahead globally, the user can never occupy a podium spot.
-      if (G >= 3) userPos = Math.max(4, userPos);
+      frozenIdx = poolRows.findIndex(r => String(r.user_id) === String(userId));
+    }
+
+    if (frozenMembers && frozenIdx >= 0) {
+      let myIdx = frozenIdx;
+      // Global-top-3 rule: only the global top 3 may occupy podium slots. If this user
+      // floated into their frozen pool's top 3 without that, physically move them to
+      // position 4 so podium/list/my_display_rank/gap all stay consistent. The next
+      // refreshPoolState tick promotes them into a tougher pool anyway.
+      if (G >= 3 && myIdx < 3) {
+        const me = poolRows.splice(myIdx, 1)[0];
+        poolRows.splice(3, 0, me);
+        myIdx = 3;
+      }
+      userPos = myIdx + 1;
     } else {
-      // No frozen pool yet (refreshPoolState hasn't run for this user today) —
-      // use a live dynamic slice so the user sees something reasonable.
+      // No frozen pool yet (refreshPoolState hasn't run for this user today), or the
+      // user is somehow missing from their own pool — live dynamic slice fallback.
       const { takeAbove, takeBelow, userPos: up } = placeInPool(G, N, naturalTargetRank(G, N));
       poolRows = qualifiedRows.slice(G - takeAbove, G + takeBelow + 1);
       userPos  = up;
@@ -721,7 +792,9 @@ app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
       pool_below:          poolBelow,
       gap_to_next_secs:    gapSecs,
       gap_to_next_rank:    rowAbove ? rowAbove.display_rank : null,
-      max_talktime_secs:   Number(poolRows[0]?.talktime_secs) || 1,
+      // True pool max — after the podium remap the user (rank 4) may hold the
+      // highest talktime, and bars must scale to it
+      max_talktime_secs:   Math.max(Number(poolRows[0]?.talktime_secs) || 1, myTalktime),
       last_refreshed_at:   allRows[0]?.last_refreshed_at
     });
 
@@ -741,12 +814,15 @@ app.get('/api/leaderboard/yesterday', requireAuth, async (req, res) => {
   try {
     const userId = req.session.userId;
 
-    // Prefer the midnight snapshot — this is the rank the user actually saw at day end
+    // Prefer the midnight snapshot — this is the rank the user actually saw at day end.
+    // Filter by date: the table keeps one row per user, so without this a user who
+    // qualified days ago but not yesterday would see that stale result as "yesterday".
     if (dbAvailable) {
       try {
         const { rows: snap } = await db.query(
-          `SELECT talktime_secs, display_rank FROM leaderboard_yesterday_results WHERE user_id = $1`,
-          [userId]
+          `SELECT talktime_secs, display_rank FROM leaderboard_yesterday_results
+           WHERE user_id = $1 AND date_ist = $2`,
+          [userId, istDateOf(Date.now() - 24 * 60 * 60 * 1000)]
         );
         if (snap[0]) {
           return res.json({
@@ -787,8 +863,10 @@ app.get('/api/leaderboard/streak', requireAuth, async (req, res) => {
   try {
     const userId = req.session.userId;
 
-    // Today's qualified status from live cache
-    const allRows      = cache.today?.rows || [];
+    // Today's qualified status from live cache — only if it was fetched today (IST);
+    // right after a restart the restored cache may still hold yesterday's rows
+    const todayCacheValid = !!(cache.today?.rows && istDateOf(cache.today.fetchedAt) === istToday());
+    const allRows      = todayCacheValid ? cache.today.rows : [];
     const myTodayRow   = allRows.find(r => String(r.user_id) === String(userId));
     const qualifiedToday = !!(myTodayRow && (myTodayRow.qualified === true || myTodayRow.qualified === 'true'));
 
@@ -839,14 +917,6 @@ const PORT = process.env.PORT || 3000;
       await db.pool.query('SELECT 1');
       dbAvailable = true;
       console.log('DB: connected');
-      // Clear today's frozen pools on every startup so the first refreshPoolState()
-      // call rebuilds them with current data. Pools are re-assigned within seconds.
-      const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-      await db.pool.query(
-        `UPDATE leaderboard_pool_state SET pool_members = NULL WHERE date_ist = $1`,
-        [todayIST]
-      );
-      console.log('DB: cleared today\'s pool assignments — will rebuild on first refresh');
     } catch (e) {
       console.warn('DB: unavailable —', e.message);
     }
