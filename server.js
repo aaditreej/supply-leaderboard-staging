@@ -825,11 +825,35 @@ app.get('/api/leaderboard/yesterday', requireAuth, async (req, res) => {
           [userId, istDateOf(Date.now() - 24 * 60 * 60 * 1000)]
         );
         if (snap[0]) {
+          let displayRank = snap[0].display_rank;
+          // Read-time guard: a stored finish of 1/2/3 must be backed by a real global
+          // top-3 finish in Q2. Snapshots written before the cap existed (or by a stale
+          // pool) get recomputed here and the row self-heals.
+          if (displayRank != null && displayRank <= 3) {
+            try {
+              const sorted = (await fetchOrCache('yesterday', 2 * 60 * 60 * 1000, process.env.REDASH_QUERY_2_ID))
+                .slice()
+                .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
+              const G = sorted.findIndex(r => String(r.user_id) === String(userId));
+              if (G >= 3) {
+                const { userPos } = placeInPool(G, sorted.length, naturalTargetRank(G, sorted.length));
+                displayRank = userPos;
+              } else if (G === -1) {
+                displayRank = Math.max(4, displayRank);
+              }
+              if (displayRank !== snap[0].display_rank) {
+                db.query(
+                  `UPDATE leaderboard_yesterday_results SET display_rank = $1, updated_at = NOW() WHERE user_id = $2`,
+                  [displayRank, userId]
+                ).catch(e => console.warn('yesterday self-heal write:', e.message));
+              }
+            } catch (e) { console.warn('yesterday top-3 verify:', e.message); }
+          }
           return res.json({
             user_id:          userId,
             talktime_secs:    Number(snap[0].talktime_secs),
             talktime_display: fmtSecs(snap[0].talktime_secs),
-            display_rank:     snap[0].display_rank
+            display_rank:     displayRank
           });
         }
       } catch (e) { console.warn('yesterday snapshot read:', e.message); }
