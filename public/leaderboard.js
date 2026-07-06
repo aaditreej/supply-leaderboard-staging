@@ -317,12 +317,18 @@ function renderFlatRows(data, prevPool) {
     let meHint = '';
     if (isMe) {
       if (data.my_display_rank > 1 && data.gap_to_next_secs > 0 && data.gap_to_next_rank) {
-        const gapMins = Math.ceil(data.gap_to_next_secs / 60);
-        const eta = drift.minsToNextRank(data.gap_to_next_secs);
-        meHint = `<div class="lb-me-hint">
-          <strong>${gapMins}m</strong> behind #${data.gap_to_next_rank}
-          ${eta ? `· ~${eta}m at pace` : ''}
-        </div>`;
+        if (data.gap_to_next_secs < 60) {
+          meHint = `<div class="lb-me-hint">
+            <strong>under 1m</strong> behind #${data.gap_to_next_rank} · almost there!
+          </div>`;
+        } else {
+          const gapMins = Math.ceil(data.gap_to_next_secs / 60);
+          const eta = drift.minsToNextRank(data.gap_to_next_secs);
+          meHint = `<div class="lb-me-hint">
+            <strong>${gapMins}m</strong> behind #${data.gap_to_next_rank}
+            ${eta ? `· ~${eta}m at pace` : ''}
+          </div>`;
+        }
       } else if (leadOverNextSecs > 0) {
         meHint = `<div class="lb-me-hint lb-me-hint--lead">
           ${fmtTalktime(leadOverNextSecs)} ahead of #${(data.my_display_rank || 0) + 1}
@@ -377,11 +383,35 @@ function startLiveTicker(data) {
 
   tickerBase = { time: Date.now(), talktime: data.my_talktime_secs };
 
+  // Talktime of the row directly above (if any). The live estimate must never
+  // visually catch or pass it while the server still ranks us below — and the
+  // "behind" hint must always agree with the times shown on screen.
+  const rowAboveTt = (data.gap_to_next_secs > 0 && data.gap_to_next_rank)
+    ? data.my_talktime_secs + data.gap_to_next_secs
+    : null;
+
   tickerInterval = setInterval(() => {
     if (!todayData || !todayData.qualified) return;
-    const est = drift.estimateLiveTalktime(tickerBase.time, tickerBase.talktime);
+    let est = drift.estimateLiveTalktime(tickerBase.time, tickerBase.talktime);
+    if (rowAboveTt !== null) est = Math.min(est, rowAboveTt);
+
     const meLabel = lbRows.querySelector('.lb-row.is-me .lb-bar-label');
     if (meLabel) meLabel.textContent = fmtTalktime(est);
+
+    // Keep the gap hint in sync with the estimated time shown above it
+    if (rowAboveTt !== null) {
+      const hintEl = lbRows.querySelector('.lb-row.is-me .lb-me-hint:not(.lb-me-hint--lead)');
+      if (hintEl) {
+        const gapLive = Math.max(0, rowAboveTt - est);
+        if (gapLive < 60) {
+          hintEl.innerHTML = `<strong>under 1m</strong> behind #${todayData.gap_to_next_rank} · almost there!`;
+        } else {
+          const gapMins = Math.ceil(gapLive / 60);
+          const eta     = drift.minsToNextRank(gapLive);
+          hintEl.innerHTML = `<strong>${gapMins}m</strong> behind #${todayData.gap_to_next_rank}${eta ? ` · ~${eta}m at pace` : ''}`;
+        }
+      }
+    }
   }, 1000);
 }
 
