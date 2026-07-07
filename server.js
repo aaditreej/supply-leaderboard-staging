@@ -79,6 +79,14 @@ const cache = {
   streak:    { rows: null, fetchedAt: null }
 };
 
+// Q1 background refresh cadence (minutes, default hourly). Endpoints always serve
+// from cache — this job is the only thing that hits Redash for the today board.
+const Q1_REFRESH_MS = (Number(process.env.Q1_REFRESH_MINUTES) || 60) * 60 * 1000;
+
+// Endpoints pass this TTL: any same-IST-day cache is served instantly, no Redash
+// round-trip on a user request. The background jobs keep the cache fresh.
+const SERVE_TTL_MS = 24 * 60 * 60 * 1000;
+
 async function fetchOrCache(key, ttlMs, queryId) {
   const now = Date.now();
   // Fresh = within TTL AND fetched on the same IST day. Crossing midnight IST
@@ -421,7 +429,7 @@ async function backfillYesterday() {
   console.log(`Yesterday backfill check: ${existingCount} rows for ${dateStr}`);
   if (existingCount > 0) return; // already done
 
-  const rows = await fetchOrCache('yesterday', 2 * 60 * 60 * 1000, process.env.REDASH_QUERY_2_ID);
+  const rows = await fetchOrCache('yesterday', SERVE_TTL_MS, process.env.REDASH_QUERY_2_ID);
   if (!rows || rows.length === 0) return;
 
   // Sort by talktime desc — same ordering as today's qualified pool
@@ -661,7 +669,7 @@ app.get('/api/debug/raw', requireAuth, async (req, res) => {
 app.get('/api/leaderboard/today', requireAuth, async (req, res) => {
   if (MOCK_MODE || req.session.mode === 'test') return res.json(mockTodayData(req.session.userId));
   try {
-    const allRows = await fetchOrCache('today', 10 * 60 * 1000, process.env.REDASH_QUERY_1_ID);
+    const allRows = await fetchOrCache('today', SERVE_TTL_MS, process.env.REDASH_QUERY_1_ID);
     const userId  = req.session.userId;
     const myRow   = allRows.find(r => String(r.user_id) === String(userId));
 
@@ -831,7 +839,7 @@ app.get('/api/leaderboard/yesterday', requireAuth, async (req, res) => {
           // pool) get recomputed here and the row self-heals.
           if (displayRank != null && displayRank <= 3) {
             try {
-              const sorted = (await fetchOrCache('yesterday', 2 * 60 * 60 * 1000, process.env.REDASH_QUERY_2_ID))
+              const sorted = (await fetchOrCache('yesterday', SERVE_TTL_MS, process.env.REDASH_QUERY_2_ID))
                 .slice()
                 .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
               const G = sorted.findIndex(r => String(r.user_id) === String(userId));
@@ -860,7 +868,7 @@ app.get('/api/leaderboard/yesterday', requireAuth, async (req, res) => {
     }
 
     // Fallback: compute on-demand from Q2 data (no snapshot yet — first day or backfill running)
-    const sorted = (await fetchOrCache('yesterday', 2 * 60 * 60 * 1000, process.env.REDASH_QUERY_2_ID))
+    const sorted = (await fetchOrCache('yesterday', SERVE_TTL_MS, process.env.REDASH_QUERY_2_ID))
       .slice()
       .sort((a, b) => Number(b.talktime_secs) - Number(a.talktime_secs) || Number(a.user_id) - Number(b.user_id));
 
@@ -897,7 +905,7 @@ app.get('/api/leaderboard/streak', requireAuth, async (req, res) => {
     // Q3 tile data (cached 2h); gracefully absent if REDASH_QUERY_3_ID not set
     let q3Row = null;
     try {
-      const rows = await fetchOrCache('streak', 2 * 60 * 60 * 1000, process.env.REDASH_QUERY_3_ID);
+      const rows = await fetchOrCache('streak', SERVE_TTL_MS, process.env.REDASH_QUERY_3_ID);
       q3Row = rows.find(r => String(r.user_id) === String(userId)) || null;
     } catch (e) { /* Q3 absent — streak will be based only on today's live qualification */ }
 
@@ -958,7 +966,7 @@ const PORT = process.env.PORT || 3000;
       // Warm up all 3 queries on startup (Redash fetches run in background)
       (async () => {
         try {
-          await fetchOrCache('today', 10 * 60 * 1000, process.env.REDASH_QUERY_1_ID);
+          await fetchOrCache('today', Q1_REFRESH_MS, process.env.REDASH_QUERY_1_ID);
           await refreshPoolState();
         } catch (e) { console.warn('Q1 warm-up:', e.message); }
         try {
@@ -970,14 +978,14 @@ const PORT = process.env.PORT || 3000;
         } catch (e) { console.warn('Q3 warm-up:', e.message); }
       })();
 
-      // Q1: refresh every 10 minutes (live talktime)
+      // Q1: background refresh (default hourly; Q1_REFRESH_MINUTES to tune)
       setInterval(async () => {
         try {
           cache.today = { rows: null, fetchedAt: null };
-          await fetchOrCache('today', 10 * 60 * 1000, process.env.REDASH_QUERY_1_ID);
+          await fetchOrCache('today', Q1_REFRESH_MS, process.env.REDASH_QUERY_1_ID);
           await refreshPoolState();
         } catch (e) { console.error('Q1 scheduled refresh:', e.message); }
-      }, 10 * 60 * 1000);
+      }, Q1_REFRESH_MS);
 
       // Q2 + Q3: refresh every hour (yesterday talktime and streak tiles)
       setInterval(async () => {

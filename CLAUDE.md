@@ -38,7 +38,7 @@ All leaderboard data comes from Redash (internal analytics). Three queries:
 - **Q3** (`REDASH_QUERY_3_ID`) — 7-day streak tiles per listener
 - **Q4** (`REDASH_QUERY_4_ID`) — mobile number → user_id lookup
 
-Results are cached in-memory: Q1 = 10 min TTL, Q2/Q3 = 2 hr TTL. Every 10 minutes the server proactively invalidates and re-fetches Q1, then calls `refreshPoolState()`.
+User requests NEVER trigger a Redash query (except a cold start with an empty cache): endpoints serve any same-IST-day cache instantly (`SERVE_TTL_MS` = 24 h; the IST-day guard in `fetchOrCache` is the real expiry). Background jobs own freshness: Q1 re-fetched every `Q1_REFRESH_MINUTES` (default 60) followed by `refreshPoolState()`; Q2/Q3 hourly. Fetched results are persisted to the `leaderboard_data_cache` table and restored on boot, so restarts serve instantly too.
 
 `MOCK_MODE` is active when `REDASH_QUERY_1_ID` is not set — returns hardcoded mock data so the UI is testable without Redash credentials.
 
