@@ -10,7 +10,7 @@ A daily talktime leaderboard for Dostt listeners (experts). Each listener sees a
 - **Pool** — each listener is placed in a pool of 20 near-ranked competitors; display rank is 1–20 within that pool
 - **Podium rewards** — credited at midnight IST: Rank 1 → ₹1,500 · Rank 2 → ₹1,000 · Rank 3 → ₹500 (all as Dostt coins)
 - **Streak bonus** — ₹100 in coins for every 7 consecutive qualifying days
-- **Ranks drift** — display rank updates every 10 minutes using a small random drift so the board feels live without exposing exact global position
+- **Frozen pools** — a listener's 20 competitors are fixed for the day; display rank is their live talktime position within that pool (only the global top 3 can show rank 1/2/3)
 
 ---
 
@@ -69,7 +69,7 @@ Edit `.env` and fill in your values:
 npm run setup    # node scripts/setup_db.js
 ```
 
-Creates tables: `session`, `leaderboard_pool_state`, `listener_streak`, `leaderboard_yesterday_results`, `leaderboard_data_cache`.  
+Creates tables: `session`, `leaderboard_pool_state`, `listener_streak`, `leaderboard_daily_results`, `leaderboard_data_cache`.  
 Safe to re-run — uses `CREATE TABLE IF NOT EXISTS` and `ADD COLUMN IF NOT EXISTS`.
 
 ### 4. Run
@@ -127,13 +127,13 @@ docker-compose.yml
 
 ## Key backend concepts
 
-**Pool construction** — `placeInPool(G, N, targetRank)` slices globally sorted qualified listeners so the user lands at exactly `targetRank` in their 20-person pool. Top-20 globally get their real rank; everyone else starts at 11 and drifts.
+**Pool construction** — `placeInPool(G, N, targetRank)` slices globally sorted qualified listeners so the user lands at `targetRank` in their 20-person pool. Global top 3 target rank 1/2/3; everyone else starts at 4–11 by percentile. Pool member IDs are frozen for the day in `leaderboard_pool_state.pool_members`.
 
-**Rank drift** — `refreshPoolState()` runs every 10 minutes. For each qualified listener it applies a small random delta to `target_rank` (active listeners trend upward; inactive ones trend downward) and persists it to `leaderboard_pool_state`. Floor: listeners with 3+ people above them globally are never shown in the top 3.
+**Rank updates** — `refreshPoolState()` runs on the Q1 refresh cadence. Display rank is the listener's live talktime position within their frozen pool — no randomness. Pools are re-assigned only when undersized or when a non-global-top-3 listener floats into their pool's top 3 (promoted to a tougher pool at rank 4). Listeners with 3+ people above them globally are never shown in the top 3.
 
-**Cache** — Three Redash queries are cached in memory and in `leaderboard_data_cache`. Q1 (today) refreshes every 10 min; Q2 (yesterday) and Q3 (streak) every hour. On startup the server loads from DB so a restart doesn't cold-hit Redash.
+**Cache** — Three Redash queries are cached in memory and in `leaderboard_data_cache`. Q1 (today) refreshes every `Q1_REFRESH_MINUTES` (default 60); Q2 (yesterday) and Q3 (streak) every hour. User requests always serve from cache. On startup the server loads from DB so a restart doesn't cold-hit Redash.
 
-**Midnight settlement** — `midnightSettlement()` runs at 00:01 IST: updates `listener_streak`, snapshots final display ranks into `leaderboard_yesterday_results`, and purges stale pool rows.
+**Midnight settlement** — `midnightSettlement()` runs at 00:01 IST: updates `listener_streak`, appends final display ranks to `leaderboard_daily_results` (per-day history), and purges stale pool rows.
 
 **Start date** — `LEADERBOARD_START_DATE` suppresses yesterday/streak history on launch day. The yesterday tab shows a "Day 1" welcome card; streak is capped at 1.
 

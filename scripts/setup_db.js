@@ -43,19 +43,31 @@ async function setup() {
       user_id              INTEGER PRIMARY KEY,
       current_streak       INTEGER DEFAULT 0,
       last_qualifying_date DATE,
-      total_bonuses_earned INTEGER DEFAULT 0,
-      last_bonus_date      DATE,
       updated_at           TIMESTAMP
     );
   `);
 
+  // Bonus tracking moved to the BigQuery reward tables (manual crediting flow)
   await query(`
-    CREATE TABLE IF NOT EXISTS leaderboard_yesterday_results (
-      user_id       INTEGER PRIMARY KEY,
+    ALTER TABLE listener_streak DROP COLUMN IF EXISTS total_bonuses_earned;
+  `);
+  await query(`
+    ALTER TABLE listener_streak DROP COLUMN IF EXISTS last_bonus_date;
+  `);
+
+  // NOTE: leaderboard_yesterday_results is deprecated (one-row-per-user snapshot,
+  // overwritten nightly). Replaced by the append-only leaderboard_daily_results
+  // below. The old table is intentionally NOT dropped — historical data stays put.
+  await query(`
+    CREATE TABLE IF NOT EXISTS leaderboard_daily_results (
+      user_id       INTEGER,
       date_ist      DATE,
       talktime_secs INTEGER,
       display_rank  INTEGER,
-      updated_at    TIMESTAMP
+      global_rank   INTEGER,
+      qualified     BOOLEAN,
+      created_at    TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (user_id, date_ist)
     );
   `);
 

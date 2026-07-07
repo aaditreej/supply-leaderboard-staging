@@ -334,7 +334,8 @@ async function midnightSettlement() {
 
   for (const row of qualified.rows) {
     // Idempotent: if last_qualifying_date is already dateStr (double run, or a second
-    // replica settling), the streak and bonus count stay unchanged.
+    // replica settling), the streak stays unchanged. Bonus payout tracking lives in
+    // the BigQuery reward tables, not here.
     await db.query(`
       INSERT INTO listener_streak (user_id, current_streak, last_qualifying_date, updated_at)
       VALUES ($1, 1, $2, NOW())
@@ -346,16 +347,6 @@ async function midnightSettlement() {
           THEN listener_streak.current_streak + 1 ELSE 1
         END,
         last_qualifying_date = $2,
-        total_bonuses_earned = CASE
-          WHEN listener_streak.last_qualifying_date = $2::date
-          THEN listener_streak.total_bonuses_earned
-          WHEN MOD(CASE
-            WHEN listener_streak.last_qualifying_date = ($2::date - INTERVAL '1 day')::date
-            THEN listener_streak.current_streak + 1 ELSE 1
-          END, 7) = 0
-          THEN listener_streak.total_bonuses_earned + 1
-          ELSE listener_streak.total_bonuses_earned
-        END,
         updated_at = NOW()
     `, [row.user_id, dateStr]);
   }
@@ -394,12 +385,14 @@ async function midnightSettlement() {
     }
     if (!displayRank) continue;
     await db.query(`
-      INSERT INTO leaderboard_yesterday_results (user_id, date_ist, talktime_secs, display_rank, updated_at)
-      VALUES ($1, $2, $3, $4, NOW())
-      ON CONFLICT (user_id) DO UPDATE SET
-        date_ist = EXCLUDED.date_ist, talktime_secs = EXCLUDED.talktime_secs,
-        display_rank = EXCLUDED.display_rank, updated_at = NOW()
-    `, [row.user_id, dateStr, row.talktime_secs, displayRank]);
+      INSERT INTO leaderboard_daily_results (user_id, date_ist, talktime_secs, display_rank, global_rank, qualified)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id, date_ist) DO UPDATE SET
+        talktime_secs = EXCLUDED.talktime_secs,
+        display_rank  = EXCLUDED.display_rank,
+        global_rank   = EXCLUDED.global_rank,
+        qualified     = EXCLUDED.qualified
+    `, [row.user_id, dateStr, row.talktime_secs, displayRank, row.global_rank, true]);
   }
 
   await db.query(`DELETE FROM leaderboard_pool_state WHERE date_ist < $1`, [istToday()]);
@@ -422,7 +415,7 @@ async function backfillYesterday() {
   const dateStr = istDateOf(Date.now() - 24 * 60 * 60 * 1000);
 
   const existing = await db.query(
-    `SELECT COUNT(*) FROM leaderboard_yesterday_results WHERE date_ist = $1`,
+    `SELECT COUNT(*) FROM leaderboard_daily_results WHERE date_ist = $1`,
     [dateStr]
   );
   const existingCount = parseInt(existing.rows[0].count);
@@ -442,15 +435,18 @@ async function backfillYesterday() {
   for (let i = 0; i < sorted.length; i++) {
     const listener  = sorted[i];
     const { userPos: displayRank } = placeInPool(i, N, naturalTargetRank(i, N));
+    const qualifiedYest = Number(listener.talktime_secs) >= 600;
 
     try {
       await db.query(`
-        INSERT INTO leaderboard_yesterday_results (user_id, date_ist, talktime_secs, display_rank, updated_at)
-        VALUES ($1, $2, $3, $4, NOW())
-        ON CONFLICT (user_id) DO UPDATE SET
-          date_ist = EXCLUDED.date_ist, talktime_secs = EXCLUDED.talktime_secs,
-          display_rank = EXCLUDED.display_rank, updated_at = NOW()
-      `, [listener.user_id, dateStr, Number(listener.talktime_secs), displayRank]);
+        INSERT INTO leaderboard_daily_results (user_id, date_ist, talktime_secs, display_rank, global_rank, qualified)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (user_id, date_ist) DO UPDATE SET
+          talktime_secs = EXCLUDED.talktime_secs,
+          display_rank  = EXCLUDED.display_rank,
+          global_rank   = EXCLUDED.global_rank,
+          qualified     = EXCLUDED.qualified
+      `, [listener.user_id, dateStr, Number(listener.talktime_secs), displayRank, i + 1, qualifiedYest]);
     } catch (e) {
       console.error(`backfillYesterday user ${listener.user_id}:`, e.message);
     }
@@ -823,14 +819,14 @@ app.get('/api/leaderboard/yesterday', requireAuth, async (req, res) => {
     const userId = req.session.userId;
 
     // Prefer the midnight snapshot — this is the rank the user actually saw at day end.
-    // Filter by date: the table keeps one row per user, so without this a user who
-    // qualified days ago but not yesterday would see that stale result as "yesterday".
+    // leaderboard_daily_results is append-only history, so scope to yesterday's date.
+    const yIST = istDateOf(Date.now() - 24 * 60 * 60 * 1000);
     if (dbAvailable) {
       try {
         const { rows: snap } = await db.query(
-          `SELECT talktime_secs, display_rank FROM leaderboard_yesterday_results
+          `SELECT talktime_secs, display_rank FROM leaderboard_daily_results
            WHERE user_id = $1 AND date_ist = $2`,
-          [userId, istDateOf(Date.now() - 24 * 60 * 60 * 1000)]
+          [userId, yIST]
         );
         if (snap[0]) {
           let displayRank = snap[0].display_rank;
@@ -851,8 +847,8 @@ app.get('/api/leaderboard/yesterday', requireAuth, async (req, res) => {
               }
               if (displayRank !== snap[0].display_rank) {
                 db.query(
-                  `UPDATE leaderboard_yesterday_results SET display_rank = $1, updated_at = NOW() WHERE user_id = $2`,
-                  [displayRank, userId]
+                  `UPDATE leaderboard_daily_results SET display_rank = $1 WHERE user_id = $2 AND date_ist = $3`,
+                  [displayRank, userId, yIST]
                 ).catch(e => console.warn('yesterday self-heal write:', e.message));
               }
             } catch (e) { console.warn('yesterday top-3 verify:', e.message); }

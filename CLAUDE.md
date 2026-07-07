@@ -64,8 +64,9 @@ Each listener sees a personal pool of 20 (themselves + 19 others), not global ra
 
 - `session` — express-session storage (Postgres or file fallback)
 - `leaderboard_pool_state` — per-(user, date) pool assignment and display_rank; rebuilt nightly
-- `listener_streak` — current streak count per listener; updated at midnight IST
-- `leaderboard_yesterday_results` — snapshot of display_rank taken at midnight settlement
+- `listener_streak` — `(user_id, current_streak, last_qualifying_date, updated_at)`; updated at midnight IST (bonus payout tracking lives in BigQuery reward tables, not here)
+- `leaderboard_daily_results` — append-only per-(user, date) history of final display_rank, global_rank, talktime and qualified, written at midnight settlement (replaces the deprecated one-row-per-user `leaderboard_yesterday_results`)
+- `leaderboard_data_cache` — persisted Redash query results; restored on boot
 
 All DB operations are gated on `dbAvailable`. When `DATABASE_URL` is absent, falls back gracefully: in-memory neighbourhood slice for pool, Redash Q3 for streak count.
 
@@ -73,7 +74,7 @@ All DB operations are gated on `dbAvailable`. When `DATABASE_URL` is absent, fal
 
 Runs at 00:01 IST via `scheduleAtMidnight` (fixed UTC+5:30 offset math — host-timezone independent). Sequence:
 1. Updates `listener_streak` for all listeners who qualified yesterday (idempotent — a double run or second replica leaves streaks unchanged)
-2. Snapshots final display ranks into `leaderboard_yesterday_results` (talktime position within each frozen pool, global-top-3 cap applied)
+2. Snapshots final display ranks into `leaderboard_daily_results` (talktime position within each frozen pool, global-top-3 cap applied)
 3. Deletes stale rows from `leaderboard_pool_state` and clears in-memory caches
 
 The yesterday endpoint serves the snapshot only when its `date_ist` is actually yesterday — a listener who skipped a day falls through to the Q2 on-demand fallback instead of seeing a stale old-date row.
