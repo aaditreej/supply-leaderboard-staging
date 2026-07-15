@@ -67,6 +67,7 @@ Each listener sees a personal pool of 20 (themselves + 19 others), not global ra
 - `listener_streak` — `(user_id, current_streak, last_qualifying_date, updated_at)`; updated at midnight IST (bonus payout tracking lives in BigQuery reward tables, not here)
 - `leaderboard_daily_results` — append-only per-(user, date) history of final display_rank, global_rank, talktime and qualified, written at midnight settlement (replaces the deprecated one-row-per-user `leaderboard_yesterday_results`)
 - `leaderboard_data_cache` — persisted Redash query results; restored on boot
+- `login_log` — append-only `(user_id, method, logged_in_at)`; written on banner/mobile login (not on page reloads within a live session); first login = `MIN(logged_in_at)`
 
 All DB operations are gated on `dbAvailable`. When `DATABASE_URL` is absent, falls back gracefully: in-memory neighbourhood slice for pool, Redash Q3 for streak count.
 

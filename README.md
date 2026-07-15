@@ -69,7 +69,7 @@ Edit `.env` and fill in your values:
 npm run setup    # node scripts/setup_db.js
 ```
 
-Creates tables: `session`, `leaderboard_pool_state`, `listener_streak`, `leaderboard_daily_results`, `leaderboard_data_cache`.  
+Creates tables: `session`, `leaderboard_pool_state`, `listener_streak`, `leaderboard_daily_results`, `leaderboard_data_cache`, `login_log`.  
 Safe to re-run — uses `CREATE TABLE IF NOT EXISTS` and `ADD COLUMN IF NOT EXISTS`.
 
 ### 4. Run

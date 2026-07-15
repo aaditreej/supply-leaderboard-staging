@@ -488,13 +488,24 @@ function requireAuth(req, res, next) {
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 // Entry Point 1 — banner tap (?user_id= in URL, may be base64-encoded)
+// Returns the numeric user id, or null for garbage (e.g. an unfilled
+// "{user_id}" banner placeholder) — callers must not create a session for null.
 function decodeUserId(raw) {
   try {
     const decoded = Buffer.from(raw, 'base64').toString('utf8').trim();
-    return /^\d+$/.test(decoded) ? decoded : raw;
-  } catch {
-    return raw;
-  }
+    if (/^\d+$/.test(decoded)) return decoded;
+  } catch { /* not base64 — fall through to raw check */ }
+  return /^\d+$/.test(String(raw).trim()) ? String(raw).trim() : null;
+}
+
+// Append-only login history (first login = MIN(logged_in_at) per user).
+// Fire-and-forget: a logging failure must never block a login.
+function logLogin(userId, method) {
+  if (!dbAvailable) return;
+  db.query(
+    `INSERT INTO login_log (user_id, method) VALUES ($1, $2)`,
+    [userId, method]
+  ).catch(e => console.warn('login_log:', e.message));
 }
 
 app.get('/', (req, res) => {
@@ -502,6 +513,7 @@ app.get('/', (req, res) => {
   if (raw) {
     const userId = decodeUserId(raw);
     if (!userId) return res.redirect('/login');
+    if (String(req.session.userId) !== userId) logLogin(userId, 'banner');
     req.session.userId = userId;
     return req.session.save(() =>
       res.redirect('/leaderboard?user_id=' + encodeURIComponent(raw))
@@ -521,6 +533,7 @@ app.post('/api/auth/lookup-mobile', async (req, res) => {
     const rows  = await callRedash(process.env.REDASH_QUERY_4_ID, { mobile_numbers: String(mobile_number) });
     const match = rows.find(r => r.user_id);
     if (!match) return res.status(404).json({ error: 'This number is not registered as a listener.' });
+    logLogin(String(match.user_id), 'mobile');
     req.session.userId = String(match.user_id);
     req.session.save(() => res.json({ success: true }));
   } catch (err) {
@@ -557,11 +570,14 @@ app.post('/api/auth/set-mode', requireAuth, (req, res) => {
 });
 
 app.get('/leaderboard', (req, res) => {
-  // Re-auth from URL param — keeps banner links self-authenticating after session expiry
+  // Re-auth from URL param — keeps banner links self-authenticating after session expiry.
+  // Only counts as a login (and only writes the session) when the session doesn't
+  // already hold this user — plain page reloads within a session are not logins.
   const raw = req.query.user_id;
   if (raw) {
     const userId = decodeUserId(raw);
-    if (userId) {
+    if (userId && String(req.session.userId) !== userId) {
+      logLogin(userId, 'banner');
       req.session.userId = userId;
       req.session.save(() => {});
     }

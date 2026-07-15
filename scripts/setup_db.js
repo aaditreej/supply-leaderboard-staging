@@ -79,6 +79,19 @@ async function setup() {
     );
   `);
 
+  // Append-only login history. First login = MIN(logged_in_at) per user.
+  await query(`
+    CREATE TABLE IF NOT EXISTS login_log (
+      user_id      INTEGER NOT NULL,
+      method       TEXT,
+      logged_in_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_login_log_user ON login_log (user_id, logged_in_at);
+  `);
+
   console.log('All tables ready.');
   process.exit(0);
 }
