@@ -6,7 +6,7 @@
 WITH
 
 config AS (
-  SELECT DATE '2026-06-22' AS leaderboard_start_date
+  SELECT DATE '2026-07-16' AS leaderboard_start_date
 ),
 
 kannada_experts AS (
